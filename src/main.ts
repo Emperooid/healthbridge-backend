@@ -3,6 +3,8 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const helmet = require('helmet');
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -31,15 +33,34 @@ async function bootstrap() {
     }),
   });
 
+  // ── Security headers ────────────────────────────────────────────────────────
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow S3 file serving
+    contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  }));
+
   app.setGlobalPrefix('api/v1');
 
+  // ── CORS ─────────────────────────────────────────────────────────────────────
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : [];
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') || '*',
+    origin: (origin, callback) => {
+      // allow non-browser clients (curl, Postman, server-to-server) and listed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
   });
 
+  // ── Validation ───────────────────────────────────────────────────────────────
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -49,28 +70,31 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('HealthBridge API')
-    .setDescription('Scalable healthcare records management platform')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addTag('auth', 'Authentication endpoints')
-    .addTag('users', 'User management')
-    .addTag('hospitals', 'Hospital management')
-    .addTag('patients', 'Patient profiles')
-    .addTag('records', 'Medical records')
-    .addTag('files', 'File uploads')
-    .addTag('audit', 'Audit logs')
-    .build();
+  // ── Swagger (dev only) ───────────────────────────────────────────────────────
+  if (process.env.NODE_ENV !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('HealthBridge API')
+      .setDescription('Scalable healthcare records management platform')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('auth', 'Authentication endpoints')
+      .addTag('users', 'User management')
+      .addTag('hospitals', 'Hospital management')
+      .addTag('patients', 'Patient profiles')
+      .addTag('records', 'Medical records')
+      .addTag('files', 'File uploads')
+      .addTag('audit', 'Audit logs')
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+    console.log(`Swagger docs: http://localhost:${process.env.PORT || 3000}/api/docs`);
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
   console.log(`HealthBridge API running on http://localhost:${port}/api/v1`);
-  console.log(`Swagger docs: http://localhost:${port}/api/docs`);
 }
 bootstrap();

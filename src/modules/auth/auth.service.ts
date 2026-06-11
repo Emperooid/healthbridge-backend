@@ -2,16 +2,21 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Role } from '@prisma/client';
 
 const SALT_ROUNDS = 12;
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_SECONDS = 15 * 60; // 15 minutes
 
 @Injectable()
 export class AuthService {
@@ -19,6 +24,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private redis: RedisService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -43,11 +49,36 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    const lockKey = `login:locked:${dto.email}`;
+    const failKey = `login:failed:${dto.email}`;
+
+    // Check if account is locked
+    const locked = await this.redis.get(lockKey);
+    if (locked) {
+      const ttl = await this.redis.getClient().ttl(lockKey);
+      throw new HttpException(
+        `Too many failed attempts. Try again in ${Math.ceil(ttl / 60)} minute(s).`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
+
+    // Generic message to prevent user enumeration
+    if (!user || !user.isActive) {
+      await this.recordFailedAttempt(failKey, lockKey);
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
-    if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
+    if (!passwordMatch) {
+      await this.recordFailedAttempt(failKey, lockKey);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Successful login — clear any failed attempt counter
+    await this.redis.del(failKey);
+    await this.redis.del(lockKey);
 
     const tokens = await this.issueTokenPair(user.id, user.email, user.role);
     return {
@@ -127,6 +158,20 @@ export class AuthService {
       await this.prisma.refreshToken.deleteMany({ where: { userId } });
     }
     return { message: 'Logged out successfully' };
+  }
+
+  // ── Private helpers ──────────────────────────────────────────────────────────
+
+  private async recordFailedAttempt(failKey: string, lockKey: string) {
+    const attempts = await this.redis.incr(failKey);
+    if (attempts === 1) {
+      // Start the window on first failure
+      await this.redis.expire(failKey, LOCKOUT_SECONDS);
+    }
+    if (attempts >= MAX_FAILED_ATTEMPTS) {
+      await this.redis.set(lockKey, '1', LOCKOUT_SECONDS);
+      await this.redis.del(failKey);
+    }
   }
 
   private async issueTokenPair(userId: string, email: string, role: Role) {
