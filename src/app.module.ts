@@ -51,15 +51,17 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        const url = config.get<string>('redis.url');
         const tls = config.get<boolean>('redis.tls');
-        return {
-          connection: {
-            host: config.get<string>('redis.host'),
-            port: config.get<number>('redis.port'),
-            password: config.get<string>('redis.password'),
-            tls: tls ? {} : undefined,
-          },
-        };
+        const connection = url
+          ? { url }
+          : {
+              host: config.get<string>('redis.host'),
+              port: config.get<number>('redis.port'),
+              password: config.get<string>('redis.password'),
+              tls: tls ? {} : undefined,
+            };
+        return { connection };
       },
     }),
 
