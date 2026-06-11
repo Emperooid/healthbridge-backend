@@ -1,8 +1,9 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
 export class RefreshTokenDto {
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Refresh token to revoke. Omit to revoke all sessions.' })
+  @IsOptional()
   @IsString()
-  refreshToken: string;
+  refreshToken?: string;
 }

@@ -57,6 +57,16 @@ export class FilesController {
     return this.filesService.getSignedUrl(id, requesterId, requesterRole);
   }
 
+  @Get(':id/download')
+  @ApiOperation({ summary: 'Download a file — alias for /url (returns pre-signed S3 URL)' })
+  download(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') requesterId: string,
+    @CurrentUser('role') requesterRole: Role,
+  ) {
+    return this.filesService.getSignedUrl(id, requesterId, requesterRole);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Delete a file (Admin/Doctor)' })

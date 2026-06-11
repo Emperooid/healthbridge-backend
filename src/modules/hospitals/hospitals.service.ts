@@ -8,6 +8,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
+import { CreateDepartmentDto } from './dto/create-department.dto';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
 import { Role } from '@prisma/client';
 import { PaginationParams } from '../../common/decorators/pagination.decorator';
 
@@ -99,5 +101,45 @@ export class HospitalsService {
       this.prisma.doctor.count({ where: { hospitalId } }),
     ]);
     return { data, meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) } };
+  }
+
+  async createDepartment(hospitalId: string, dto: CreateDepartmentDto) {
+    const hospital = await this.prisma.hospital.findUnique({ where: { id: hospitalId } });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    return this.prisma.department.create({
+      data: { hospitalId, name: dto.name, description: dto.description },
+    });
+  }
+
+  async getDepartments(hospitalId: string) {
+    const hospital = await this.prisma.hospital.findUnique({ where: { id: hospitalId } });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    return this.prisma.department.findMany({
+      where: { hospitalId, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async updateDepartment(departmentId: string, dto: UpdateDepartmentDto) {
+    const dept = await this.prisma.department.findUnique({ where: { id: departmentId } });
+    if (!dept) throw new NotFoundException('Department not found');
+
+    return this.prisma.department.update({
+      where: { id: departmentId },
+      data: dto,
+    });
+  }
+
+  async removeDepartment(departmentId: string) {
+    const dept = await this.prisma.department.findUnique({ where: { id: departmentId } });
+    if (!dept) throw new NotFoundException('Department not found');
+
+    await this.prisma.department.update({
+      where: { id: departmentId },
+      data: { isActive: false },
+    });
+    return { message: 'Department deactivated' };
   }
 }

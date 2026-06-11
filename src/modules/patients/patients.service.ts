@@ -73,6 +73,24 @@ export class PatientsService {
     };
   }
 
+  async findMe(requesterId: string) {
+    const patient = await this.prisma.patient.findUnique({
+      where: { userId: requesterId },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        hospital: { select: { id: true, name: true, address: true } },
+        records: {
+          take: 5,
+          orderBy: { visitDate: 'desc' },
+          select: { id: true, title: true, visitDate: true, status: true },
+        },
+      },
+    });
+
+    if (!patient) throw new NotFoundException('No patient profile found for this account. Create one first.');
+    return patient;
+  }
+
   async findOne(id: string, requesterId: string, requesterRole: Role) {
     const cacheKey = `patient:${id}`;
     const cached = await this.redis.get(cacheKey);

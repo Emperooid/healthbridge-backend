@@ -28,6 +28,48 @@ enum AuditAction {
   LOGOUT
   FILE_UPLOAD
   FILE_ACCESS
+  SHARE
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum AppointmentType {
+  CONSULTATION
+  FOLLOW_UP
+  LAB_REVIEW
+  PROCEDURE
+  EMERGENCY
+}
+
+enum ShareLinkStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum VisitStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PrescriptionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum LabOrderStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }
 
 model User {
@@ -46,6 +88,8 @@ model User {
   patient       Patient?
   doctor        Doctor?
   auditLogs     AuditLog[]
+  notifications Notification[]
+  shareGrants   ShareGrant[]   @relation("GrantedTo")
 
   @@map("users")
 }
@@ -72,11 +116,31 @@ model Hospital {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  doctors  Doctor[]
-  patients Patient[]
-  records  MedicalRecord[]
+  doctors       Doctor[]
+  patients      Patient[]
+  records       MedicalRecord[]
+  appointments  Appointment[]
+  departments   Department[]
+  visits        Visit[]
+  prescriptions Prescription[]
+  labOrders     LabOrder[]
 
   @@map("hospitals")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  hospitalId  String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  visits   Visit[]
+
+  @@map("departments")
 }
 
 model Doctor {
@@ -88,9 +152,14 @@ model Doctor {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospital Hospital @relation(fields: [hospitalId], references: [id])
-  records  MedicalRecord[]
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospital         Hospital        @relation(fields: [hospitalId], references: [id])
+  records          MedicalRecord[]
+  appointments     Appointment[]
+  assignedPatients Patient[]       @relation("AssignedDoctor")
+  visits           Visit[]
+  prescriptions    Prescription[]
+  labOrders        LabOrder[]
 
   @@map("doctors")
 }
@@ -99,6 +168,8 @@ model Patient {
   id               String    @id @default(uuid())
   userId           String    @unique
   hospitalId       String
+  assignedDoctorId String?
+  globalPatientId  String    @unique @default(uuid())
   dateOfBirth      DateTime?
   gender           String?
   bloodType        String?
@@ -107,9 +178,16 @@ model Patient {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hospital Hospital @relation(fields: [hospitalId], references: [id])
-  records  MedicalRecord[]
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospital        Hospital       @relation(fields: [hospitalId], references: [id])
+  assignedDoctor  Doctor?        @relation("AssignedDoctor", fields: [assignedDoctorId], references: [id])
+  records         MedicalRecord[]
+  appointments    Appointment[]
+  shareLinks      ShareLink[]
+  shareGrants     ShareGrant[]   @relation("PatientGrants")
+  visits          Visit[]
+  prescriptions   Prescription[]
+  labOrders       LabOrder[]
 
   @@map("patients")
 }
@@ -169,4 +247,173 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  patientId       String
+  doctorId        String
+  hospitalId      String
+  title           String
+  reason          String
+  type            AppointmentType   @default(CONSULTATION)
+  status          AppointmentStatus @default(PENDING)
+  scheduledAt     DateTime
+  durationMinutes Int               @default(30)
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  doctor   Doctor   @relation(fields: [doctorId], references: [id])
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+
+  @@map("appointments")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String?
+  link      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model ShareLink {
+  id          String          @id @default(uuid())
+  patientId   String
+  token       String          @unique @default(uuid())
+  scope       String          @default("ALL")
+  expiresAt   DateTime
+  maxAccess   Int?
+  accessCount Int             @default(0)
+  status      ShareLinkStatus @default(ACTIVE)
+  createdAt   DateTime        @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("share_links")
+}
+
+model ShareGrant {
+  id          String    @id @default(uuid())
+  patientId   String
+  grantedToId String
+  scope       String    @default("ALL")
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  patient   Patient @relation("PatientGrants", fields: [patientId], references: [id])
+  grantedTo User    @relation("GrantedTo", fields: [grantedToId], references: [id])
+
+  @@map("share_grants")
+}
+
+model Visit {
+  id           String      @id @default(uuid())
+  patientId    String
+  doctorId     String
+  hospitalId   String
+  departmentId String?
+  reason       String
+  startTime    DateTime    @default(now())
+  endTime      DateTime?
+  status       VisitStatus @default(IN_PROGRESS)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  patient       Patient        @relation(fields: [patientId], references: [id])
+  doctor        Doctor         @relation(fields: [doctorId], references: [id])
+  hospital      Hospital       @relation(fields: [hospitalId], references: [id])
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  encounters    Encounter[]
+  prescriptions Prescription[]
+  labOrders     LabOrder[]
+
+  @@map("visits")
+}
+
+model Encounter {
+  id             String   @id @default(uuid())
+  visitId        String
+  chiefComplaint String?
+  examination    String?
+  diagnosis      String?
+  notes          String?
+  vitalSigns     Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@map("encounters")
+}
+
+model Prescription {
+  id           String             @id @default(uuid())
+  patientId    String
+  doctorId     String
+  hospitalId   String
+  visitId      String?
+  drug         String
+  dosage       String
+  frequency    String
+  duration     String
+  instructions String?
+  status       PrescriptionStatus @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  doctor   Doctor   @relation(fields: [doctorId], references: [id])
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+  visit    Visit?   @relation(fields: [visitId], references: [id])
+
+  @@map("prescriptions")
+}
+
+model LabOrder {
+  id         String         @id @default(uuid())
+  patientId  String
+  doctorId   String
+  hospitalId String
+  visitId    String?
+  tests      String[]
+  notes      String?
+  status     LabOrderStatus @default(PENDING)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  patient  Patient     @relation(fields: [patientId], references: [id])
+  doctor   Doctor      @relation(fields: [doctorId], references: [id])
+  hospital Hospital    @relation(fields: [hospitalId], references: [id])
+  visit    Visit?      @relation(fields: [visitId], references: [id])
+  results  LabResult[]
+
+  @@map("lab_orders")
+}
+
+model LabResult {
+  id             String   @id @default(uuid())
+  orderId        String
+  testName       String
+  value          String?
+  unit           String?
+  referenceRange String?
+  isAbnormal     Boolean  @default(false)
+  notes          String?
+  reportFile     String?
+  createdAt      DateTime @default(now())
+
+  order LabOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("lab_results")
 }

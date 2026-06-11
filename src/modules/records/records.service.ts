@@ -156,6 +156,31 @@ export class RecordsService {
     return { message: `Record ${id} deleted` };
   }
 
+  async findMine(pagination: PaginationParams, requesterId: string) {
+    const patient = await this.prisma.patient.findUnique({ where: { userId: requesterId } });
+    if (!patient) throw new NotFoundException('No patient profile found for this account.');
+
+    const [data, total] = await Promise.all([
+      this.prisma.medicalRecord.findMany({
+        where: { patientId: patient.id },
+        skip: pagination.skip,
+        take: pagination.limit,
+        orderBy: { visitDate: 'desc' },
+        include: {
+          doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+          hospital: { select: { name: true } },
+          _count: { select: { files: true } },
+        },
+      }),
+      this.prisma.medicalRecord.count({ where: { patientId: patient.id } }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
+    };
+  }
+
   async findByPatient(patientId: string, pagination: PaginationParams, requesterId: string, requesterRole: Role) {
     const patient = await this.prisma.patient.findUnique({ where: { id: patientId } });
     if (!patient) throw new NotFoundException('Patient not found');

@@ -93,6 +93,26 @@ export class AuthService {
     return this.issueTokenPair(user.id, user.email, user.role);
   }
 
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        patient: { select: { id: true, hospitalId: true, assignedDoctorId: true } },
+        doctor: { select: { id: true, hospitalId: true, specialization: true } },
+      },
+    });
+    if (!user) throw new Error('User not found');
+    return user;
+  }
+
   async logout(userId: string, incomingRefreshToken?: string) {
     if (incomingRefreshToken) {
       const tokens = await this.prisma.refreshToken.findMany({ where: { userId } });

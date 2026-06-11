@@ -14,6 +14,13 @@ import { PatientsModule } from './modules/patients/patients.module';
 import { RecordsModule } from './modules/records/records.module';
 import { FilesModule } from './modules/files/files.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SharingModule } from './modules/sharing/sharing.module';
+import { EncountersModule } from './modules/encounters/encounters.module';
+import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
+import { LabsModule } from './modules/labs/labs.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -65,6 +72,13 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
     RecordsModule,
     FilesModule,
     AuditModule,
+    AppointmentsModule,
+    NotificationsModule,
+    SharingModule,
+    EncountersModule,
+    PrescriptionsModule,
+    LabsModule,
+    AnalyticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

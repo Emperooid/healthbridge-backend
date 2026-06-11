@@ -47,6 +47,15 @@ export class RecordsController {
     return this.recordsService.findAll(pagination, requesterId, requesterRole);
   }
 
+  @Get('mine')
+  @ApiOperation({ summary: 'Get own records (patient JWT lookup)' })
+  findMine(
+    @Pagination() pagination: PaginationParams,
+    @CurrentUser('id') requesterId: string,
+  ) {
+    return this.recordsService.findMine(pagination, requesterId);
+  }
+
   @Get('patient/:patientId')
   @ApiOperation({ summary: 'Get all records for a patient' })
   findByPatient(

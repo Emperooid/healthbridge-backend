@@ -1,81 +1,126 @@
 # HealthBridge API Reference
-> For frontend integration. Base URL: `http://localhost:3000/api/v1`
-> Interactive docs (Swagger UI): `http://localhost:3000/api/docs`
+
+> **Base URL:** `https://healthbridge-backend-65sj.onrender.com/api/v1`
+> **Swagger / Interactive Docs:** `https://healthbridge-backend-65sj.onrender.com/api/docs`
 
 ---
 
-## Before You Start — Setup Checklist
+## Authentication
 
-Copy `.env.example` to `.env` and fill in the values below:
-
-```env
-# ── REQUIRED ──────────────────────────────────────
-DATABASE_URL=postgresql://postgres:password@localhost:5432/healthbridge
-
-JWT_ACCESS_SECRET=any-long-random-string-min-32-chars
-JWT_REFRESH_SECRET=different-long-random-string-min-32-chars
-
-# ── AWS S3 (only needed for file upload feature) ──
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-aws-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret
-AWS_S3_BUCKET=your-s3-bucket-name
-
-# ── OPTIONAL (defaults shown) ─────────────────────
-PORT=3000
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=          # leave blank if no Redis password
-CORS_ORIGIN=http://localhost:5173,http://localhost:3001
-```
-
-**Start the backend:**
-```bash
-# 1. Start Postgres + Redis (Docker required)
-docker-compose up postgres redis -d
-
-# 2. Run database migrations
-npm run prisma:migrate
-
-# 3. Seed default admin account
-npm run seed
-
-# 4. Start the server
-npm run start:dev
-```
-
-**Default Admin account (after seed):**
-| Field | Value |
-|---|---|
-| Email | `admin@healthbridge.com` |
-| Password | `Admin@1234` |
-
----
-
-## Authentication Flow
-
-All endpoints (except register / login / refresh) require this header:
+All endpoints (except `register`, `login`, `refresh`, and public share resolve) require:
 ```
 Authorization: Bearer <accessToken>
 ```
 
-Tokens expire — `accessToken` lasts **15 minutes**, `refreshToken` lasts **7 days**.
-When the access token expires, call `/auth/refresh` with the refresh token to get a new pair.
+- `accessToken` expires in **15 minutes**
+- `refreshToken` expires in **7 days**
+- When you get a `401`, call `/auth/refresh` to get a new token pair
 
 ---
 
-## API Endpoints
+## Standard Response Format
 
-### 🔐 Auth — `/api/v1/auth`
-
-#### Register
+Every response is wrapped in this envelope:
+```json
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": { ... },
+  "timestamp": "2026-06-11T10:00:00.000Z"
+}
 ```
-POST /api/v1/auth/register
+
+Error response:
+```json
+{
+  "statusCode": 400,
+  "timestamp": "2026-06-11T10:00:00.000Z",
+  "path": "/api/v1/auth/login",
+  "message": "Invalid credentials"
+}
+```
+
+---
+
+## Pagination
+
+All list endpoints accept:
+| Param | Default | Max | Description |
+|---|---|---|---|
+| `page` | `1` | — | Page number |
+| `limit` | `10` | `100` | Items per page |
+
+Paginated responses include a `meta` object:
+```json
+{
+  "data": [...],
+  "meta": { "total": 100, "page": 1, "limit": 10, "pages": 10 }
+}
+```
+
+---
+
+## Rate Limiting
+
+**100 requests per 60 seconds** per IP. Returns `429 Too Many Requests` when exceeded.
+
+---
+
+## Axios Setup (copy-paste ready)
+
+```js
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'https://healthbridge-backend-65sj.onrender.com/api/v1',
+});
+
+// Attach token automatically
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('accessToken');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// Auto-refresh on 401
+api.interceptors.response.use(
+  res => res,
+  async err => {
+    if (err.response?.status === 401 && !err.config._retry) {
+      err.config._retry = true;
+      const { data } = await api.post('/auth/refresh', {
+        refreshToken: localStorage.getItem('refreshToken'),
+      });
+      localStorage.setItem('accessToken', data.data.accessToken);
+      localStorage.setItem('refreshToken', data.data.refreshToken);
+      err.config.headers.Authorization = `Bearer ${data.data.accessToken}`;
+      return api(err.config);
+    }
+    return Promise.reject(err);
+  }
+);
+
+export default api;
+```
+
+---
+
+---
+
+# Endpoints
+
+---
+
+## 🔐 Auth — `/auth`
+
+### Register
+```
+POST /auth/register
 ```
 Body:
 ```json
 {
-  "email": "doctor@hospital.com",
+  "email": "jane@hospital.com",
   "password": "StrongP@ss1",
   "firstName": "Jane",
   "lastName": "Smith",
@@ -83,21 +128,13 @@ Body:
   "role": "DOCTOR"
 }
 ```
-> `role` is optional. Defaults to `"PATIENT"`. Options: `"ADMIN"` | `"DOCTOR"` | `"PATIENT"`
+> `role` defaults to `"PATIENT"`. Options: `"ADMIN"` | `"DOCTOR"` | `"PATIENT"`
 
 Response `201`:
 ```json
 {
-  "statusCode": 201,
-  "message": "Success",
   "data": {
-    "user": {
-      "id": "uuid",
-      "email": "doctor@hospital.com",
-      "firstName": "Jane",
-      "lastName": "Smith",
-      "role": "DOCTOR"
-    },
+    "user": { "id": "uuid", "email": "...", "firstName": "Jane", "lastName": "Smith", "role": "DOCTOR" },
     "accessToken": "eyJhbGci...",
     "refreshToken": "eyJhbGci..."
   }
@@ -106,22 +143,22 @@ Response `201`:
 
 ---
 
-#### Login
+### Login
 ```
-POST /api/v1/auth/login
+POST /auth/login
 ```
 Body:
 ```json
 {
-  "email": "admin@healthbridge.com",
-  "password": "Admin@1234"
+  "email": "jane@hospital.com",
+  "password": "StrongP@ss1"
 }
 ```
 Response `200`:
 ```json
 {
   "data": {
-    "user": { "id": "uuid", "email": "...", "firstName": "...", "role": "ADMIN" },
+    "user": { "id": "uuid", "email": "...", "firstName": "Jane", "role": "DOCTOR" },
     "accessToken": "eyJhbGci...",
     "refreshToken": "eyJhbGci..."
   }
@@ -130,41 +167,53 @@ Response `200`:
 
 ---
 
-#### Refresh Token
+### Refresh Token
 ```
-POST /api/v1/auth/refresh
+POST /auth/refresh
 ```
 Body:
 ```json
-{
-  "refreshToken": "eyJhbGci..."
-}
+{ "refreshToken": "eyJhbGci..." }
 ```
-Response `200` — returns a **new** `accessToken` + `refreshToken` pair.
+Response `200` — returns a new `accessToken` + `refreshToken` pair.
 
 ---
 
-#### Logout
+### Logout
 ```
-POST /api/v1/auth/logout
+POST /auth/logout
 Authorization: Bearer <accessToken>
 ```
-Body (optional — revoke specific refresh token, or omit to revoke all):
+Body *(optional)*:
 ```json
-{
-  "refreshToken": "eyJhbGci..."
-}
+{ "refreshToken": "eyJhbGci..." }
 ```
-Response `200`: `{ "message": "Logged out successfully" }`
+> Omit body to revoke **all** sessions. Provide `refreshToken` to revoke only the current session.
+
+Response `200`:
+```json
+{ "data": { "message": "Logged out successfully" } }
+```
 
 ---
 
-### 👤 Users — `/api/v1/users`
-> All endpoints require `Authorization: Bearer <token>`
-
-#### Create User *(Admin only)*
+### Get Current User
 ```
-POST /api/v1/users
+GET /auth/me
+Authorization: Bearer <accessToken>
+```
+Response: Full user object including linked `patient` or `doctor` profile IDs.
+
+---
+
+---
+
+## 👤 Users — `/users`
+*(Admin only except GET own profile)*
+
+### Create User
+```
+POST /users
 ```
 Body:
 ```json
@@ -180,34 +229,25 @@ Body:
 
 ---
 
-#### List All Users *(Admin only)*
+### List Users *(Admin)*
 ```
-GET /api/v1/users?page=1&limit=10
-```
-Response includes pagination meta:
-```json
-{
-  "data": {
-    "data": [ { "id": "...", "email": "...", "role": "PATIENT", ... } ],
-    "meta": { "total": 50, "page": 1, "limit": 10, "pages": 5 }
-  }
-}
+GET /users?page=1&limit=10
 ```
 
 ---
 
-#### Get User by ID
+### Get User by ID
 ```
-GET /api/v1/users/:id
+GET /users/:id
 ```
 
 ---
 
-#### Update User Profile
+### Update User Profile
 ```
-PATCH /api/v1/users/:id
+PATCH /users/:id
 ```
-Body (all fields optional):
+Body (all optional):
 ```json
 {
   "firstName": "Updated",
@@ -215,13 +255,13 @@ Body (all fields optional):
   "phone": "+2348099999999"
 }
 ```
-> Users can only update their own profile. Admins can update any user.
+> Patients/Doctors can only update their own profile.
 
 ---
 
-#### Change User Role *(Admin only)*
+### Change User Role *(Admin)*
 ```
-PATCH /api/v1/users/:id/role
+PATCH /users/:id/role
 ```
 Body:
 ```json
@@ -230,9 +270,9 @@ Body:
 
 ---
 
-#### Activate / Deactivate User *(Admin only)*
+### Activate / Deactivate User *(Admin)*
 ```
-PATCH /api/v1/users/:id/status
+PATCH /users/:id/status
 ```
 Body:
 ```json
@@ -241,18 +281,20 @@ Body:
 
 ---
 
-#### Delete User *(Admin only)*
+### Delete User *(Admin)*
 ```
-DELETE /api/v1/users/:id
+DELETE /users/:id
 ```
 
 ---
 
-### 🏥 Hospitals — `/api/v1/hospitals`
+---
 
-#### Create Hospital *(Admin only)*
+## 🏥 Hospitals — `/hospitals`
+
+### Create Hospital *(Admin)*
 ```
-POST /api/v1/hospitals
+POST /hospitals
 ```
 Body:
 ```json
@@ -266,46 +308,41 @@ Body:
 
 ---
 
-#### List Hospitals *(any role)*
+### List Hospitals
 ```
-GET /api/v1/hospitals?page=1&limit=10
+GET /hospitals?page=1&limit=10
 ```
 
 ---
 
-#### Get Hospital Details *(any role)*
+### Get Hospital
 ```
-GET /api/v1/hospitals/:id
+GET /hospitals/:id
 ```
-Returns hospital info + list of assigned doctors.
 
 ---
 
-#### Update Hospital *(Admin only)*
+### Update Hospital *(Admin)*
 ```
-PATCH /api/v1/hospitals/:id
+PATCH /hospitals/:id
 ```
-Body (all fields optional):
+Body (all optional):
 ```json
-{
-  "name": "New Name",
-  "address": "New Address",
-  "isActive": true
-}
+{ "name": "New Name", "address": "New Address", "isActive": true }
 ```
 
 ---
 
-#### Delete Hospital *(Admin only)*
+### Delete Hospital *(Admin)*
 ```
-DELETE /api/v1/hospitals/:id
+DELETE /hospitals/:id
 ```
 
 ---
 
-#### Assign Doctor to Hospital *(Admin only)*
+### Assign Doctor to Hospital *(Admin)*
 ```
-POST /api/v1/hospitals/:id/doctors
+POST /hospitals/:id/doctors
 ```
 Body:
 ```json
@@ -315,22 +352,65 @@ Body:
   "licenseNumber": "LMC-2024-001"
 }
 ```
-> The user must already have `role: "DOCTOR"`. Set the role first via `PATCH /users/:id/role`.
+> User must already have `role: "DOCTOR"`. Set via `PATCH /users/:id/role` first.
 
 ---
 
-#### List Doctors in a Hospital *(Admin, Doctor)*
+### List Hospital Doctors
 ```
-GET /api/v1/hospitals/:id/doctors?page=1&limit=10
+GET /hospitals/:id/doctors?page=1&limit=10
 ```
 
 ---
 
-### 🧑‍⚕️ Patients — `/api/v1/patients`
-
-#### Create Patient Profile
+### Create Department *(Admin)*
 ```
-POST /api/v1/patients
+POST /hospitals/:id/departments
+```
+Body:
+```json
+{
+  "name": "Cardiology",
+  "description": "Heart and cardiovascular care"
+}
+```
+
+---
+
+### List Hospital Departments
+```
+GET /hospitals/:id/departments
+```
+Response: Array of departments for the given hospital.
+
+---
+
+### Update Department *(Admin)*
+```
+PATCH /hospitals/departments/:departmentId
+```
+Body (all optional):
+```json
+{ "name": "Updated Name", "description": "Updated description" }
+```
+
+---
+
+### Delete Department *(Admin)*
+```
+DELETE /hospitals/departments/:departmentId
+```
+> Soft-deletes (sets `isActive: false`). The department won't appear in list results.
+
+---
+
+---
+
+## 🧑‍⚕️ Patients — `/patients`
+
+### Create Patient Profile
+```
+POST /patients
 ```
 Body:
 ```json
@@ -344,59 +424,171 @@ Body:
   "emergencyContact": "Jane Doe: +2348098765432"
 }
 ```
-> `gender` options: `"MALE"` | `"FEMALE"` | `"OTHER"`
 
 ---
 
-#### List Patients
+### List Patients
 ```
-GET /api/v1/patients?page=1&limit=10
+GET /patients?page=1&limit=10
 ```
-> **Admin/Doctor** — sees all patients.
-> **Patient** — sees only their own profile.
+> **Admin/Doctor** — all patients. **Patient** — own profile only.
 
 ---
 
-#### Get Patient by ID
+### Get My Patient Profile *(Patient)*
 ```
-GET /api/v1/patients/:id
+GET /patients/me
+```
+Returns your patient profile with the last 5 records.
+
+---
+
+### Get Patient by ID
+```
+GET /patients/:id
 ```
 > Patients can only access their own record.
 
 ---
 
-#### Update Patient
+### Update Patient
 ```
-PATCH /api/v1/patients/:id
+PATCH /patients/:id
 ```
 Body (all optional):
 ```json
 {
   "bloodType": "A+",
   "allergies": ["Penicillin"],
-  "emergencyContact": "Updated Contact"
+  "emergencyContact": "New Contact",
+  "assignedDoctorId": "uuid-of-doctor-profile"
 }
 ```
 
 ---
 
-#### Delete Patient *(Admin only)*
+### Delete Patient *(Admin)*
 ```
-DELETE /api/v1/patients/:id
+DELETE /patients/:id
 ```
 
 ---
 
-### 📋 Medical Records — `/api/v1/records`
+---
 
-#### Create Record *(Doctor/Admin)*
+## 🏃 Visits & Encounters — `/encounters`
+
+Visits represent a patient physically attending the hospital. Encounters are the clinical notes recorded during a visit.
+
+### Start a Visit *(Doctor, Admin)*
 ```
-POST /api/v1/records
+POST /encounters/visits
 ```
 Body:
 ```json
 {
-  "patientId": "uuid-of-patient",
+  "patientId": "uuid-of-patient-profile",
+  "doctorId": "uuid-of-doctor-profile",
+  "hospitalId": "uuid-of-hospital",
+  "departmentId": "uuid-of-department",
+  "reason": "Chest pain and shortness of breath",
+  "startTime": "2026-06-11T09:00:00.000Z"
+}
+```
+> `departmentId` and `startTime` are optional.
+
+---
+
+### List Visits
+```
+GET /encounters/visits?page=1&limit=10&patientId=uuid&doctorId=uuid&status=IN_PROGRESS
+```
+> `status` options: `"IN_PROGRESS"` | `"COMPLETED"` | `"CANCELLED"`
+> **Admin** — all visits. **Doctor** — own visits. **Patient** — own visits.
+
+---
+
+### Get Visit (with encounters, prescriptions, lab orders)
+```
+GET /encounters/visits/:id
+```
+
+---
+
+### Update Visit Status *(Doctor, Admin)*
+```
+PATCH /encounters/visits/:id
+```
+Body:
+```json
+{
+  "status": "COMPLETED",
+  "endTime": "2026-06-11T10:30:00.000Z"
+}
+```
+> Setting `status: "COMPLETED"` auto-sets `endTime` to now if not provided.
+
+---
+
+### Add Encounter Note to a Visit *(Doctor, Admin)*
+```
+POST /encounters/notes
+```
+Body:
+```json
+{
+  "visitId": "uuid-of-visit",
+  "chiefComplaint": "Chest pain radiating to the left arm",
+  "examination": "Regular heartbeat, no murmurs detected",
+  "diagnosis": "Possible angina — needs further investigation",
+  "notes": "Refer for ECG and stress test",
+  "vitalSigns": {
+    "temperature": "37.2°C",
+    "bloodPressure": "120/80",
+    "pulse": "72bpm",
+    "weight": "75kg",
+    "height": "178cm"
+  }
+}
+```
+> Can only add notes to an `IN_PROGRESS` visit.
+
+---
+
+### Get All Notes for a Visit
+```
+GET /encounters/visits/:visitId/notes
+```
+
+---
+
+### Update an Encounter Note *(Doctor, Admin)*
+```
+PATCH /encounters/notes/:id
+```
+Body (all optional):
+```json
+{
+  "diagnosis": "Confirmed angina",
+  "notes": "Started on nitrates",
+  "vitalSigns": { "bloodPressure": "118/76" }
+}
+```
+
+---
+
+---
+
+## 📋 Medical Records — `/records`
+
+### Create Record *(Doctor, Admin)*
+```
+POST /records
+```
+Body:
+```json
+{
+  "patientId": "uuid-of-patient-profile",
   "doctorId": "uuid-of-doctor-profile",
   "hospitalId": "uuid-of-hospital",
   "title": "Annual Check-up",
@@ -405,224 +597,645 @@ Body:
   "treatment": "Lifestyle changes and monitoring",
   "prescription": "Amlodipine 5mg daily",
   "status": "ACTIVE",
-  "visitDate": "2026-05-01T09:00:00.000Z"
+  "visitDate": "2026-06-01T09:00:00.000Z"
 }
 ```
 > `status` options: `"DRAFT"` | `"ACTIVE"` | `"ARCHIVED"`
 
 ---
 
-#### List Records
+### List Records
 ```
-GET /api/v1/records?page=1&limit=10
+GET /records?page=1&limit=10
 ```
-> **Admin** — all records. **Doctor** — records they created. **Patient** — their own records.
+> **Admin** — all. **Doctor** — records they created. **Patient** — own records.
 
 ---
 
-#### Get Records for a Specific Patient
+### Get My Records *(Patient)*
 ```
-GET /api/v1/records/patient/:patientId?page=1&limit=10
-```
-
----
-
-#### Get Record by ID
-```
-GET /api/v1/records/:id
+GET /records/mine?page=1&limit=10
 ```
 
 ---
 
-#### Update Record
+### Get Records for a Patient
 ```
-PATCH /api/v1/records/:id
+GET /records/patient/:patientId?page=1&limit=10
+```
+
+---
+
+### Get Record by ID
+```
+GET /records/:id
+```
+
+---
+
+### Update Record *(Doctor, Admin)*
+```
+PATCH /records/:id
 ```
 Body (all optional):
 ```json
 {
   "diagnosis": "Updated diagnosis",
-  "prescription": "New medication",
+  "treatment": "New treatment plan",
   "status": "ARCHIVED"
 }
 ```
 
 ---
 
-#### Delete Record
+### Delete Record *(Admin)*
 ```
-DELETE /api/v1/records/:id
+DELETE /records/:id
 ```
 
 ---
 
-### 📎 Files — `/api/v1/files`
-> Requires AWS S3 configured in `.env`
+---
 
-#### Upload File to a Record
+## 💊 Prescriptions — `/prescriptions`
+
+### Issue a Prescription *(Doctor, Admin)*
 ```
-POST /api/v1/files/upload/:recordId
-Content-Type: multipart/form-data
+POST /prescriptions
 ```
-Form field: `file` (the actual file)
+Body:
+```json
+{
+  "patientId": "uuid-of-patient-profile",
+  "doctorId": "uuid-of-doctor-profile",
+  "hospitalId": "uuid-of-hospital",
+  "visitId": "uuid-of-visit",
+  "drug": "Amoxicillin",
+  "dosage": "500mg",
+  "frequency": "Twice daily",
+  "duration": "7 days",
+  "instructions": "Take after meals"
+}
+```
+> `visitId` is optional but recommended to link to a specific visit.
+> Patient receives a notification when a prescription is issued.
 
-Allowed types: JPEG, PNG, GIF, PDF, DOC, DOCX — max **10MB**
+---
 
+### List Prescriptions
+```
+GET /prescriptions?page=1&limit=10&patientId=uuid&status=ACTIVE
+```
+> `status` options: `"ACTIVE"` | `"COMPLETED"` | `"CANCELLED"`
+> **Admin** — all. **Doctor** — own. **Patient** — own.
+
+---
+
+### Get My Prescriptions
+```
+GET /prescriptions/mine?page=1&limit=10
+```
+> Works for both patients and doctors.
+
+---
+
+### Get Prescription by ID
+```
+GET /prescriptions/:id
+```
+
+---
+
+### Update Prescription *(Doctor, Admin)*
+```
+PATCH /prescriptions/:id
+```
+Body (all optional):
+```json
+{
+  "status": "COMPLETED",
+  "dosage": "250mg",
+  "instructions": "Updated instructions"
+}
+```
+
+---
+
+---
+
+## 🧪 Lab Orders & Results — `/labs`
+
+### Create Lab Order *(Doctor, Admin)*
+```
+POST /labs/orders
+```
+Body:
+```json
+{
+  "patientId": "uuid-of-patient-profile",
+  "doctorId": "uuid-of-doctor-profile",
+  "hospitalId": "uuid-of-hospital",
+  "visitId": "uuid-of-visit",
+  "tests": ["Full Blood Count", "Liver Function Test", "Fasting Blood Sugar"],
+  "notes": "Patient must fast for 8 hours before sample collection"
+}
+```
+> `visitId` and `notes` are optional.
+> Patient receives a notification when a lab order is created.
+
+---
+
+### List Lab Orders
+```
+GET /labs/orders?page=1&limit=10&patientId=uuid&status=PENDING
+```
+> `status` options: `"PENDING"` | `"IN_PROGRESS"` | `"COMPLETED"` | `"CANCELLED"`
+
+---
+
+### Get Lab Order (with results)
+```
+GET /labs/orders/:id
+```
+Returns the order plus all attached results.
+
+---
+
+### Update Lab Order Status *(Admin)*
+```
+PATCH /labs/orders/:id
+```
+Body:
+```json
+{ "status": "CANCELLED" }
+```
+
+---
+
+### Post Lab Result *(Admin)*
+```
+POST /labs/results
+```
+Body:
+```json
+{
+  "orderId": "uuid-of-lab-order",
+  "testName": "Haemoglobin",
+  "value": "14.5",
+  "unit": "g/dL",
+  "referenceRange": "13.5 - 17.5 g/dL",
+  "isAbnormal": false,
+  "notes": "Within normal range",
+  "reportFile": "s3://bucket/reports/lab-001.pdf"
+}
+```
+> Both patient and doctor are notified when a result is posted.
+> Order auto-advances: `PENDING → IN_PROGRESS` on first result, `IN_PROGRESS → COMPLETED` when all tests have results.
+
+---
+
+### Get Results for an Order
+```
+GET /labs/orders/:orderId/results
+```
+
+---
+
+---
+
+## 📅 Appointments — `/appointments`
+
+### Book Appointment *(Patient, Admin)*
+```
+POST /appointments
+```
+Body:
+```json
+{
+  "patientId": "uuid-of-patient-profile",
+  "doctorId": "uuid-of-doctor-profile",
+  "hospitalId": "uuid-of-hospital",
+  "title": "General Checkup",
+  "reason": "Routine annual checkup",
+  "type": "CONSULTATION",
+  "scheduledAt": "2026-07-10T10:00:00.000Z",
+  "durationMinutes": 30,
+  "notes": "Patient has mild anxiety"
+}
+```
+> `type` options: `"CONSULTATION"` | `"FOLLOW_UP"` | `"LAB_REVIEW"` | `"PROCEDURE"` | `"EMERGENCY"`
+> Both patient and doctor receive a notification on booking.
+
+---
+
+### List Appointments
+```
+GET /appointments?page=1&limit=10&status=PENDING&from=2026-07-01&to=2026-07-31
+```
+> Filter params: `status`, `patientId`, `doctorId`, `from`, `to`
+
+---
+
+### Get My Appointments *(Patient or Doctor)*
+```
+GET /appointments/mine?page=1&limit=10
+```
+
+---
+
+### Get Appointment by ID
+```
+GET /appointments/:id
+```
+
+---
+
+### Update Appointment *(Doctor, Admin)*
+```
+PATCH /appointments/:id
+```
+Body (all optional):
+```json
+{
+  "scheduledAt": "2026-07-11T11:00:00.000Z",
+  "notes": "Rescheduled",
+  "durationMinutes": 45
+}
+```
+
+---
+
+### Update Appointment Status *(Doctor, Admin)*
+```
+PATCH /appointments/:id/status
+```
+Body:
+```json
+{ "status": "CONFIRMED" }
+```
+Valid transitions:
+- `PENDING` → `CONFIRMED` or `CANCELLED`
+- `CONFIRMED` → `COMPLETED`, `NO_SHOW`, or `CANCELLED`
+
+> Patient is notified when status changes to `CONFIRMED`.
+
+---
+
+### Cancel Appointment
+```
+PATCH /appointments/:id/cancel
+```
+> Patients can cancel their own. Doctors and Admins can cancel any.
+
+---
+
+### Delete Appointment *(Admin)*
+```
+DELETE /appointments/:id
+```
+
+---
+
+---
+
+## 🔔 Notifications — `/notifications`
+
+### List My Notifications
+```
+GET /notifications?page=1&limit=10
+```
+
+---
+
+### Get Unread Count
+```
+GET /notifications/unread-count
+```
+Response:
+```json
+{ "data": { "count": 5 } }
+```
+
+---
+
+### Mark Notification as Read
+```
+PATCH /notifications/:id/read
+```
+
+---
+
+### Mark All as Read
+```
+PATCH /notifications/read-all
+```
+
+---
+
+### Delete Notification
+```
+DELETE /notifications/:id
+```
+
+---
+
+---
+
+## 🔗 Record Sharing — `/share`
+
+### Generate a Share Link *(Patient)*
+```
+POST /share/links
+```
+Body:
+```json
+{
+  "scope": "ALL",
+  "expiresInHours": 48,
+  "maxAccess": 5
+}
+```
+> `scope` options: `"ALL"` | `"RECORDS"` | `"LABS"` | `"PRESCRIPTIONS"`
+> `maxAccess` is optional — limits total number of times the link can be opened.
+
+Response includes a `token` field. The share URL is:
+```
+GET /share/resolve/:token  (no auth required)
+```
+
+---
+
+### List My Share Links *(Patient)*
+```
+GET /share/links
+```
+
+---
+
+### Revoke a Share Link *(Patient)*
+```
+PATCH /share/links/:id/revoke
+```
+
+---
+
+### Get QR Code for a Share Link *(Patient)*
+```
+GET /share/links/:id/qr
+Authorization: Bearer <accessToken>
+```
+Response:
+```json
+{ "data": "data:image/png;base64,iVBORw0KGg..." }
+```
+> Render directly in an `<img src="...">` tag.
+
+---
+
+### Resolve Share Token *(Public — no auth)*
+```
+GET /share/resolve/:token
+```
+Returns the patient's shared data based on the link's scope. Increments access count.
+
+---
+
+### Grant Access to a User *(Patient)*
+```
+POST /share/grants
+```
+Body:
+```json
+{
+  "grantedToEmail": "doctor@hospital.com",
+  "scope": "ALL",
+  "expiresInDays": 30
+}
+```
+> `expiresInDays` is optional — omit for permanent access until revoked.
+
+---
+
+### List My Access Grants *(Patient)*
+```
+GET /share/grants
+```
+
+---
+
+### Revoke an Access Grant *(Patient)*
+```
+PATCH /share/grants/:id/revoke
+```
+
+---
+
+---
+
+## 📊 Analytics — `/analytics`
+*(Admin only)*
+
+### System Overview
+```
+GET /analytics/overview
+```
 Response:
 ```json
 {
   "data": {
-    "id": "uuid",
-    "recordId": "...",
-    "originalName": "xray.pdf",
-    "mimeType": "application/pdf",
-    "size": 204800,
-    "s3Key": "records/xxx/yyy.pdf",
-    "createdAt": "2026-05-01T..."
+    "totalPatients": 142,
+    "totalDoctors": 18,
+    "totalHospitals": 3,
+    "totalRecords": 520,
+    "totalAppointments": 310,
+    "totalLabOrders": 87,
+    "totalPrescriptions": 204,
+    "totalVisits": 290
   }
 }
 ```
 
 ---
 
-#### List Files for a Record
+### Patient Statistics
 ```
-GET /api/v1/files/record/:recordId
+GET /analytics/patients
+```
+Returns total, new this month vs last month, growth rate, breakdown by gender and blood type.
+
+---
+
+### Appointment Statistics
+```
+GET /analytics/appointments
+```
+Returns total, upcoming, breakdown by status.
+
+---
+
+### Medical Record Statistics
+```
+GET /analytics/records
+```
+Returns total, created this month, breakdown by status.
+
+---
+
+### Hospital Utilization
+```
+GET /analytics/hospitals
+```
+Returns per-hospital counts of patients, doctors, appointments, records, departments.
+
+---
+
+### Lab Statistics
+```
+GET /analytics/labs
+```
+Returns total orders, abnormal result count, breakdown by status.
+
+---
+
+### Prescription Statistics
+```
+GET /analytics/prescriptions
+```
+Returns total, issued this month, breakdown by status.
+
+---
+
+---
+
+## 📎 Files — `/files`
+> Requires AWS S3 configured on the server.
+
+### Upload File to a Record *(Doctor, Admin)*
+```
+POST /files/upload/:recordId
+Content-Type: multipart/form-data
+```
+Form field: `file`
+
+Allowed types: JPEG, PNG, GIF, PDF, DOC, DOCX — max **10 MB**
+
+---
+
+### List Files for a Record
+```
+GET /files/record/:recordId
 ```
 
 ---
 
-#### Get Pre-signed Download URL
+### Get Pre-signed Download URL
 ```
-GET /api/v1/files/:id/url
+GET /files/:id/url
 ```
 Response:
 ```json
 { "data": { "url": "https://s3.amazonaws.com/...?X-Amz-Signature=..." } }
 ```
-> URL expires in **1 hour**. Use this URL directly in `<img>` or `<a href>`.
+> URL expires in 1 hour. Use directly in `<img src>` or `<a href>`.
 
 ---
 
-#### Delete File
+### Download File (stream)
 ```
-DELETE /api/v1/files/:id
+GET /files/:id/download
 ```
 
 ---
 
-### 📝 Audit Logs — `/api/v1/audit`
+### Delete File *(Doctor, Admin)*
+```
+DELETE /files/:id
+```
+
+---
+
+---
+
+## 📝 Audit Logs — `/audit`
 *(Admin only)*
 
-#### List All Audit Logs
+### List All Audit Logs
 ```
-GET /api/v1/audit?page=1&limit=10
-```
-
-#### Logs for a Specific User
-```
-GET /api/v1/audit/user/:userId?page=1&limit=10
+GET /audit?page=1&limit=10
 ```
 
----
-
-## Standard Response Format
-
-Every response follows this envelope:
-```json
-{
-  "statusCode": 200,
-  "message": "Success",
-  "data": { ... },
-  "timestamp": "2026-05-01T10:00:00.000Z"
-}
+### Logs for a Specific User
 ```
-
-**Error response:**
-```json
-{
-  "statusCode": 401,
-  "timestamp": "2026-05-01T10:00:00.000Z",
-  "path": "/api/v1/auth/login",
-  "message": "Invalid credentials"
-}
+GET /audit/user/:userId?page=1&limit=10
 ```
 
 ---
-
-## Pagination Query Params
-
-All list endpoints accept:
-| Param | Default | Max | Description |
-|---|---|---|---|
-| `page` | `1` | — | Page number |
-| `limit` | `10` | `100` | Items per page |
-
----
-
-## Rate Limiting
-
-Public endpoints are rate-limited to **100 requests per 60 seconds** per IP.
-Exceeding the limit returns HTTP `429 Too Many Requests`.
 
 ---
 
 ## Role Permissions Summary
 
-| Endpoint | ADMIN | DOCTOR | PATIENT |
+| Resource | ADMIN | DOCTOR | PATIENT |
 |---|:---:|:---:|:---:|
-| Register / Login | ✅ | ✅ | ✅ |
-| Manage any user | ✅ | ❌ | ❌ |
-| Create hospital | ✅ | ❌ | ❌ |
+| Register / Login / Logout | ✅ | ✅ | ✅ |
+| Manage users (create, role, status, delete) | ✅ | ❌ | ❌ |
+| Create / delete hospital | ✅ | ❌ | ❌ |
 | View hospitals | ✅ | ✅ | ✅ |
-| Assign doctor to hospital | ✅ | ❌ | ❌ |
+| Manage departments | ✅ | ❌ | ❌ |
 | Create patient profile | ✅ | ✅ | ✅ |
 | View any patient | ✅ | ✅ | ❌ |
-| View own patient profile | ✅ | ✅ | ✅ (own only) |
+| View own patient profile | ✅ | ✅ | ✅ |
+| Start / update visit | ✅ | ✅ | ❌ |
+| View visits | ✅ | ✅ (own) | ✅ (own) |
+| Add encounter notes | ✅ | ✅ | ❌ |
 | Create medical record | ✅ | ✅ | ❌ |
 | View medical records | ✅ | ✅ (own) | ✅ (own) |
+| Issue prescription | ✅ | ✅ | ❌ |
+| View prescriptions | ✅ | ✅ (own) | ✅ (own) |
+| Create lab order | ✅ | ✅ | ❌ |
+| Post lab result | ✅ | ❌ | ❌ |
+| View lab orders & results | ✅ | ✅ (own) | ✅ (own) |
+| Book appointment | ✅ | ❌ | ✅ (own) |
+| Confirm / complete appointment | ✅ | ✅ | ❌ |
+| Cancel appointment | ✅ | ✅ | ✅ (own) |
 | Upload / delete files | ✅ | ✅ | ❌ |
 | View files | ✅ | ✅ (own) | ✅ (own) |
+| Generate share links / grants | ❌ | ❌ | ✅ |
+| View analytics | ✅ | ❌ | ❌ |
 | View audit logs | ✅ | ❌ | ❌ |
 
 ---
 
-## Typical Frontend Setup Flow
+---
+
+## Typical Frontend Flow
 
 ```
-1. Register a user or use the seeded admin
-2. POST /auth/login  →  save accessToken + refreshToken
-3. Add to every request:  Authorization: Bearer <accessToken>
-4. When you get 401 Unauthorized:
-     POST /auth/refresh  →  save new accessToken + refreshToken
-5. POST /auth/logout  to clear session
-```
+1.  Register user            POST /auth/register
+2.  Login                    POST /auth/login  →  save accessToken + refreshToken
+3.  Attach to all requests   Authorization: Bearer <accessToken>
+4.  Token expired (401)?     POST /auth/refresh  →  save new pair
+5.  Logout                   POST /auth/logout
 
-**Example Axios setup:**
-```js
-const api = axios.create({ baseURL: 'http://localhost:3000/api/v1' });
+── Patient flow ──────────────────────────────────────────────────────
+6.  Create patient profile   POST /patients
+7.  View dashboard           GET  /patients/me
+8.  View records             GET  /records/mine
+9.  Book appointment         POST /appointments
+10. Share records            POST /share/links  →  share the token URL
 
-// Attach token automatically
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('accessToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+── Doctor flow ────────────────────────────────────────────────────────
+6.  Doctor assigned to hosp  POST /hospitals/:id/doctors  (Admin does this)
+7.  Start a visit            POST /encounters/visits
+8.  Add encounter notes      POST /encounters/notes
+9.  Issue prescription       POST /prescriptions
+10. Order lab tests          POST /labs/orders
+11. View lab results         GET  /labs/orders/:orderId/results
 
-// Auto-refresh on 401
-api.interceptors.response.use(
-  res => res,
-  async err => {
-    if (err.response?.status === 401) {
-      const { data } = await api.post('/auth/refresh', {
-        refreshToken: localStorage.getItem('refreshToken'),
-      });
-      localStorage.setItem('accessToken', data.data.accessToken);
-      localStorage.setItem('refreshToken', data.data.refreshToken);
-      err.config.headers.Authorization = `Bearer ${data.data.accessToken}`;
-      return api(err.config);
-    }
-    return Promise.reject(err);
-  }
-);
+── Admin flow ─────────────────────────────────────────────────────────
+6.  Create hospital          POST /hospitals
+7.  Add departments          POST /hospitals/:id/departments
+8.  Assign doctors           POST /hospitals/:id/doctors
+9.  View analytics           GET  /analytics/overview
+10. View audit trail         GET  /audit
 ```

@@ -44,6 +44,12 @@ export class PatientsController {
     return this.patientsService.findAll(pagination, requesterId, requesterRole);
   }
 
+  @Get('me')
+  @ApiOperation({ summary: 'Get own patient profile (by JWT)' })
+  findMe(@CurrentUser('id') requesterId: string) {
+    return this.patientsService.findMe(requesterId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get patient by ID' })
   findOne(

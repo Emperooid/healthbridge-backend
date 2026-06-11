@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   HttpCode,
   HttpStatus,
@@ -46,6 +47,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get new access/refresh token pair' })
   async refresh(@Body() dto: RefreshTokenDto) {
+    const { UnauthorizedException } = await import('@nestjs/common');
+    if (!dto.refreshToken) throw new UnauthorizedException('Refresh token is required');
     let userId: string;
     try {
       const payload = await this.jwtService.verifyAsync<{ sub: string }>(dto.refreshToken, {
@@ -53,7 +56,6 @@ export class AuthController {
       });
       userId = payload.sub;
     } catch {
-      const { UnauthorizedException } = await import('@nestjs/common');
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
     return this.authService.refreshTokens(userId, dto.refreshToken);
@@ -64,7 +66,15 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout (revoke refresh token)' })
-  logout(@CurrentUser('id') userId: string, @Body() dto: Partial<RefreshTokenDto>) {
-    return this.authService.logout(userId, dto.refreshToken);
+  logout(@CurrentUser('id') userId: string, @Body() dto: RefreshTokenDto) {
+    return this.authService.logout(userId, dto?.refreshToken);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current authenticated user' })
+  me(@CurrentUser() user: { id: string; email: string; role: string }) {
+    return this.authService.me(user.id);
   }
 }
