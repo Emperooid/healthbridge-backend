@@ -17,6 +17,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SharingModule } from './modules/sharing/sharing.module';
+import { MailModule } from './modules/mail/mail.module';
 import { EncountersModule } from './modules/encounters/encounters.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
 import { LabsModule } from './modules/labs/labs.module';
@@ -67,6 +68,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
     PrismaModule,
     RedisModule,
+    MailModule,
     AuthModule,
     UsersModule,
     HospitalsModule,

@@ -84,12 +84,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  refreshTokens RefreshToken[]
-  patient       Patient?
-  doctor        Doctor?
-  auditLogs     AuditLog[]
-  notifications Notification[]
-  shareGrants   ShareGrant[]   @relation("GrantedTo")
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  patient             Patient?
+  doctor              Doctor?
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  shareGrants         ShareGrant[]   @relation("GrantedTo")
 
   @@map("users")
 }
@@ -104,6 +105,19 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
 }
 
 model Hospital {
