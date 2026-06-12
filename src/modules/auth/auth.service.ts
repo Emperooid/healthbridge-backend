@@ -265,6 +265,17 @@ export class AuthService {
     return { message: 'Verification email sent.' };
   }
 
+  async resendVerificationByEmail(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    // Same response regardless — prevents email enumeration
+    if (!user || !user.isActive || user.isEmailVerified) {
+      return { message: 'If that email exists and is unverified, a new link has been sent.' };
+    }
+
+    await this.sendVerificationEmail(user.id, user.email, user.firstName);
+    return { message: 'If that email exists and is unverified, a new link has been sent.' };
+  }
+
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
