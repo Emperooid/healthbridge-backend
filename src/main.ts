@@ -5,6 +5,8 @@ import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const helmet = require('helmet');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -32,6 +34,8 @@ async function bootstrap() {
       ],
     }),
   });
+
+  app.use(cookieParser());
 
   // ── Security headers ────────────────────────────────────────────────────────
   app.use(helmet({
