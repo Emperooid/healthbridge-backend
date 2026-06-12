@@ -4,16 +4,19 @@ import {
   Get,
   Body,
   Query,
+  Req,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -22,6 +25,8 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+
+const REFRESH_COOKIE = 'hb_refresh_token';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -36,8 +41,11 @@ export class AuthController {
   @Post('register')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Register a new user' })
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: any) {
+    const result = await this.authService.register(dto);
+    this.setRefreshCookie(res, result.refreshToken);
+    const { refreshToken: _, ...body } = result;
+    return body;
   }
 
   @Public()
@@ -45,28 +53,50 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Login with email and password' })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: any) {
+    const result = await this.authService.login(dto);
+    this.setRefreshCookie(res, result.refreshToken);
+    const { refreshToken: _, ...body } = result;
+    return body;
   }
 
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({ summary: 'Get new access/refresh token pair' })
-  async refresh(@Body() dto: RefreshTokenDto) {
-    const { UnauthorizedException } = await import('@nestjs/common');
-    if (!dto.refreshToken) throw new UnauthorizedException('Refresh token is required');
+  @ApiOperation({ summary: 'Get a new access token using the HttpOnly refresh cookie' })
+  async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    if (!token) throw new UnauthorizedException('No refresh token');
+
     let userId: string;
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub: string }>(dto.refreshToken, {
+      const payload = await this.jwtService.verifyAsync<{ sub: string }>(token, {
         secret: this.configService.get<string>('jwt.refreshSecret'),
       });
       userId = payload.sub;
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    return this.authService.refreshTokens(userId, dto.refreshToken);
+
+    const result = await this.authService.refreshTokens(userId, token);
+    this.setRefreshCookie(res, result.refreshToken);
+    return { accessToken: result.accessToken };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout — revokes refresh token and clears cookie' })
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    this.clearRefreshCookie(res);
+    return this.authService.logout(userId, token);
   }
 
   @Public()
@@ -85,15 +115,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Reset password using token from email' })
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('logout')
-  @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout (revoke refresh token)' })
-  logout(@CurrentUser('id') userId: string, @Body() dto: RefreshTokenDto) {
-    return this.authService.logout(userId, dto?.refreshToken);
   }
 
   @Public()
@@ -128,5 +149,28 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user' })
   me(@CurrentUser() user: { id: string; email: string; role: string }) {
     return this.authService.me(user.id);
+  }
+
+  // ── Cookie helpers ────────────────────────────────────────────────────────
+
+  private setRefreshCookie(res: any, token: string) {
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie(REFRESH_COOKIE, token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
+  private clearRefreshCookie(res: any) {
+    const isProd = process.env.NODE_ENV === 'production';
+    res.clearCookie(REFRESH_COOKIE, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      path: '/',
+    });
   }
 }
