@@ -124,13 +124,22 @@ export class AuthController {
     return this.authService.verifyEmail(token);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @Public()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @ApiOperation({ summary: 'Resend email verification link (public — accepts { email })' })
+  resendVerification(@Body() dto: ForgotPasswordDto) {
+    return this.authService.resendVerificationByEmail(dto.email);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('resend-verification/me')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Resend email verification link' })
-  resendVerification(@CurrentUser('id') userId: string) {
+  @ApiOperation({ summary: 'Resend email verification link (authenticated)' })
+  resendVerificationMe(@CurrentUser('id') userId: string) {
     return this.authService.resendVerification(userId);
   }
 
