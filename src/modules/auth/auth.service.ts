@@ -17,6 +17,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Role } from '@prisma/client';
 
 const SALT_ROUNDS = 12;
@@ -50,6 +51,8 @@ export class AuthService {
       select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
+    await this.sendVerificationEmail(user.id, user.email, user.firstName);
+
     const tokens = await this.issueTokenPair(user.id, user.email, user.role);
     return { user, ...tokens };
   }
@@ -80,6 +83,13 @@ export class AuthService {
     if (!passwordMatch) {
       await this.recordFailedAttempt(failKey, lockKey);
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new HttpException(
+        'Please verify your email before logging in. Check your inbox or request a new link.',
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     // Successful login — clear any failed attempt counter
@@ -224,7 +234,76 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
+  async verifyEmail(token: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const record = await this.prisma.emailVerificationToken.findUnique({
+      where: { token: hashedToken },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      throw new BadRequestException('Verification link is invalid or has expired');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { isEmailVerified: true, emailVerifiedAt: new Date() },
+      }),
+      this.prisma.emailVerificationToken.deleteMany({ where: { userId: record.userId } }),
+    ]);
+
+    return { message: 'Email verified successfully. You can now log in.' };
+  }
+
+  async resendVerification(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException('User not found');
+    if (user.isEmailVerified) throw new BadRequestException('Email is already verified');
+
+    await this.sendVerificationEmail(user.id, user.email, user.firstName);
+    return { message: 'Verification email sent.' };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const match = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!match) throw new UnauthorizedException('Current password is incorrect');
+
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException('New password must differ from the current password');
+    }
+
+    const hashed = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { password: hashed } }),
+      // Revoke all sessions so other devices must re-login
+      this.prisma.refreshToken.deleteMany({ where: { userId } }),
+    ]);
+
+    return { message: 'Password changed successfully. Please log in again.' };
+  }
+
   // ── Private helpers ──────────────────────────────────────────────────────────
+
+  private async sendVerificationEmail(userId: string, email: string, firstName: string) {
+    await this.prisma.emailVerificationToken.deleteMany({ where: { userId } });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await this.prisma.emailVerificationToken.create({
+      data: { userId, token: hashedToken, expiresAt },
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || process.env.BACKEND_URL || 'http://localhost:3001';
+    const verifyUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
+    await this.mail.sendEmailVerification(email, firstName, verifyUrl);
+  }
 
   private async recordFailedAttempt(failKey: string, lockKey: string) {
     const attempts = await this.redis.incr(failKey);

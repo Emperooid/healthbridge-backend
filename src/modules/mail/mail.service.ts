@@ -18,6 +18,34 @@ export class MailService {
     });
   }
 
+  async sendEmailVerification(to: string, firstName: string, verifyUrl: string) {
+    try {
+      await this.transporter.sendMail({
+        from: `"HealthBridge" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+        to,
+        subject: 'Verify your HealthBridge email address',
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:auto">
+            <h2>Welcome to HealthBridge, ${firstName}!</h2>
+            <p>Please verify your email address to activate your account.
+               This link expires in <strong>24 hours</strong>.</p>
+            <a href="${verifyUrl}"
+               style="display:inline-block;padding:12px 24px;background:#16a34a;
+                      color:#fff;border-radius:6px;text-decoration:none;font-weight:600">
+              Verify Email
+            </a>
+            <p style="margin-top:24px;color:#6b7280;font-size:13px">
+              If you didn't create a HealthBridge account, ignore this email.<br>
+              Link: ${verifyUrl}
+            </p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send verification email to ${to}`, err);
+    }
+  }
+
   async sendPasswordReset(to: string, firstName: string, resetUrl: string) {
     try {
       await this.transporter.sendMail({
