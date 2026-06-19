@@ -25,6 +25,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { setAuthCookies, clearAuthCookies } from '../../common/utils/set-auth-cookies';
 
 const REFRESH_COOKIE = 'hb_refresh_token';
 
@@ -43,7 +44,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user' })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: any) {
     const result = await this.authService.register(dto);
-    this.setRefreshCookie(res, result.refreshToken);
+    this.setAuthCookies(res, result.refreshToken, result.user);
     const { refreshToken: _, ...body } = result;
     return body;
   }
@@ -55,7 +56,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email and password' })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: any) {
     const result = await this.authService.login(dto);
-    this.setRefreshCookie(res, result.refreshToken);
+    this.setAuthCookies(res, result.refreshToken, result.user);
     const { refreshToken: _, ...body } = result;
     return body;
   }
@@ -80,8 +81,8 @@ export class AuthController {
     }
 
     const result = await this.authService.refreshTokens(userId, token);
-    this.setRefreshCookie(res, result.refreshToken);
-    return { accessToken: result.accessToken };
+    this.setAuthCookies(res, result.refreshToken, result.user);
+    return { accessToken: result.accessToken, user: result.user };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -95,7 +96,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: any,
   ) {
     const token = req.cookies?.[REFRESH_COOKIE];
-    this.clearRefreshCookie(res);
+    this.clearAuthCookies(res);
     return this.authService.logout(userId, token);
   }
 
@@ -168,7 +169,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: any,
   ) {
     const result = await this.authService.acceptInvite(body.token, body.password);
-    this.setRefreshCookie(res, result.refreshToken);
+    this.setAuthCookies(res, result.refreshToken, result.user);
     const { refreshToken: _, ...response } = result;
     return response;
   }
@@ -183,24 +184,11 @@ export class AuthController {
 
   // ── Cookie helpers ────────────────────────────────────────────────────────
 
-  private setRefreshCookie(res: any, token: string) {
-    const isProd = process.env.NODE_ENV === 'production';
-    res.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
+  setAuthCookies(res: any, refreshToken: string, user: { id: string; email: string; role: string; firstName: string; lastName: string }) {
+    setAuthCookies(res, refreshToken, user, this.jwtService, this.configService);
   }
 
-  private clearRefreshCookie(res: any) {
-    const isProd = process.env.NODE_ENV === 'production';
-    res.clearCookie(REFRESH_COOKIE, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
-      path: '/',
-    });
+  private clearAuthCookies(res: any) {
+    clearAuthCookies(res);
   }
 }

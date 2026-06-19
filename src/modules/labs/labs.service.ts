@@ -1,9 +1,10 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateLabOrderDto } from './dto/create-lab-order.dto';
 import { UpdateLabOrderDto } from './dto/update-lab-order.dto';
@@ -21,7 +22,7 @@ export class LabsService {
     private notifications: NotificationsService,
   ) {}
 
-  // ─── Lab Orders ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Lab Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async createOrder(dto: CreateLabOrderDto, requesterId: string) {
     const [patient, doctor, hospital] = await Promise.all([
@@ -101,10 +102,7 @@ export class LabsService {
       this.prisma.labOrder.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findOneOrder(id: string, requesterId: string, requesterRole: Role) {
@@ -139,7 +137,7 @@ export class LabsService {
     return this.prisma.labOrder.update({ where: { id }, data: dto });
   }
 
-  // ─── Lab Results ──────────────────────────────────────────────────────────
+  // â”€â”€â”€ Lab Results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async addResult(dto: CreateLabResultDto, requesterId: string) {
     const order = await this.prisma.labOrder.findUnique({
@@ -182,7 +180,7 @@ export class LabsService {
       });
     }
 
-    const abnormalNote = dto.isAbnormal ? ' ⚠️ Abnormal result detected.' : '';
+    const abnormalNote = dto.isAbnormal ? ' âš ï¸ Abnormal result detected.' : '';
     await Promise.all([
       this.notifications.create(order.patient.userId, {
         title: 'Lab Result Available',
@@ -251,3 +249,6 @@ export class LabsService {
     }
   }
 }
+
+
+

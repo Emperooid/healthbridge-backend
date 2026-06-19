@@ -42,6 +42,7 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) throw new ConflictException('Email already registered');
 
+    const role = dto.role ?? Role.PATIENT;
     const hashed = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = await this.prisma.user.create({
       data: {
@@ -50,10 +51,19 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
-        role: dto.role ?? Role.PATIENT,
+        role,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, createdAt: true },
     });
+
+    if (role === Role.PATIENT && dto.hospitalId) {
+      const hospital = await this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } });
+      if (hospital) {
+        await this.prisma.patient.create({
+          data: { userId: user.id, hospitalId: dto.hospitalId },
+        });
+      }
+    }
 
     await this.sendVerificationEmail(user.id, user.email, user.firstName);
 
@@ -137,11 +147,13 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true, isActive: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true },
     });
     if (!user || !user.isActive) throw new UnauthorizedException('User inactive');
 
-    return this.issueTokenPair(user.id, user.email, user.role);
+    const tokens = await this.issueTokenPair(user.id, user.email, user.role);
+    const { isActive: _, ...safeUser } = user;
+    return { ...tokens, user: safeUser };
   }
 
   async me(userId: string) {
@@ -338,7 +350,7 @@ export class AuthService {
 
   async verifyInvite(token: string) {
     const raw = await this.redis.get(`invite:${token}`);
-    if (!raw) throw new NotFoundException('Invitation link is invalid or has expired');
+    if (!raw) throw new HttpException('Invitation link has expired or is invalid', HttpStatus.GONE);
     const { invitedById: _, ...data } = JSON.parse(raw);
     return data;
   }

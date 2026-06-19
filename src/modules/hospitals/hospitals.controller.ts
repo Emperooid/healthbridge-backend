@@ -6,12 +6,15 @@ import {
   Patch,
   Param,
   Delete,
+  Res,
   UseGuards,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 import { HospitalsService } from './hospitals.service';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
@@ -26,20 +29,28 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Pagination, PaginationParams } from '../../common/decorators/pagination.decorator';
+import { setAuthCookies } from '../../common/utils/set-auth-cookies';
 
 @ApiTags('hospitals')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('hospitals')
 export class HospitalsController {
-  constructor(private readonly hospitalsService: HospitalsService) {}
+  constructor(
+    private readonly hospitalsService: HospitalsService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Public()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Hospital self-registration (public)' })
-  register(@Body() dto: RegisterHospitalDto) {
-    return this.hospitalsService.register(dto);
+  async register(@Body() dto: RegisterHospitalDto, @Res({ passthrough: true }) res: any) {
+    const result = await this.hospitalsService.register(dto);
+    setAuthCookies(res, result.refreshToken, result.user, this.jwtService, this.configService);
+    const { refreshToken: _, ...body } = result;
+    return body;
   }
 
   @Public()

@@ -1,9 +1,12 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { paginate } from '../../common/utils/paginate';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
@@ -18,31 +21,53 @@ import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { Role } from '@prisma/client';
 import { PaginationParams } from '../../common/decorators/pagination.decorator';
 
+const SALT_ROUNDS = 12;
+
 @Injectable()
 export class HospitalsService {
   constructor(
     private prisma: PrismaService,
     private mail: MailService,
+    private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async register(dto: RegisterHospitalDto) {
-    const [emailUser, emailHospital] = await Promise.all([
+    const [emailUser, emailHospital, licenseConflict] = await Promise.all([
       this.prisma.user.findUnique({ where: { email: dto.adminEmail } }),
       this.prisma.hospital.findUnique({ where: { email: dto.hospitalEmail } }),
+      this.prisma.hospital.findUnique({ where: { licenseNumber: dto.licenseNumber } }),
     ]);
     if (emailUser) throw new ConflictException('Admin email already registered');
     if (emailHospital) throw new ConflictException('Hospital email already registered');
+    if (licenseConflict) throw new ConflictException('License number already in use');
 
-    const hashedPassword = await bcrypt.hash(dto.password, 12);
+    const hashedPassword = await bcrypt.hash(dto.password, SALT_ROUNDS);
 
-    const [hospital, user] = await Promise.all([
-      this.prisma.hospital.create({
-        data: { name: dto.hospitalName, address: dto.hospitalAddress, phone: dto.hospitalPhone, email: dto.hospitalEmail },
-      }),
-      this.prisma.user.create({
-        data: { firstName: dto.firstName, lastName: dto.lastName, email: dto.adminEmail, password: hashedPassword, phone: dto.adminPhone, role: Role.ADMIN },
-      }),
-    ]);
+    const hospital = await this.prisma.hospital.create({
+      data: {
+        name: dto.hospitalName,
+        address: dto.address,
+        city: dto.city,
+        state: dto.state,
+        phone: dto.hospitalPhone,
+        email: dto.hospitalEmail,
+        type: dto.hospitalType,
+        licenseNumber: dto.licenseNumber,
+      },
+    });
+
+    const user = await this.prisma.user.create({
+      data: {
+        firstName: dto.adminFirstName,
+        lastName: dto.adminLastName,
+        email: dto.adminEmail,
+        password: hashedPassword,
+        phone: dto.adminPhone,
+        role: Role.ADMIN,
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    });
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
@@ -54,11 +79,30 @@ export class HospitalsService {
     this.mail.sendEmailVerification(user.email, user.firstName, `${frontendUrl}/verify-email?token=${rawToken}`)
       .catch(() => undefined);
 
+    const tokens = await this.issueTokenPair(user.id, user.email, user.role);
     return {
-      message: 'Hospital registered. Please verify your email to activate your account.',
+      ...tokens,
+      user: { ...user, hospitalId: hospital.id },
       hospital: { id: hospital.id, name: hospital.name },
-      admin: { id: user.id, email: user.email },
     };
+  }
+
+  private async issueTokenPair(userId: string, email: string, role: Role) {
+    const payload = { sub: userId, email, role };
+    const accessSecret = this.configService.get<string>('jwt.accessSecret');
+    const refreshSecret = this.configService.get<string>('jwt.refreshSecret');
+
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, { secret: accessSecret, expiresIn: '15m' }),
+      this.jwtService.signAsync(payload, { secret: refreshSecret, expiresIn: '7d' }),
+    ]);
+
+    const hashed = await bcrypt.hash(refreshToken, SALT_ROUNDS);
+    await this.prisma.refreshToken.create({
+      data: { userId, token: hashed, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+    });
+
+    return { accessToken, refreshToken };
   }
 
   async findPublic() {
@@ -88,7 +132,7 @@ export class HospitalsService {
       }),
       this.prisma.hospital.count({ where: { isActive: true } }),
     ]);
-    return { data, meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) } };
+    return paginate(data, total, pagination);
   }
 
   async findOne(id: string) {
@@ -152,7 +196,7 @@ export class HospitalsService {
       }),
       this.prisma.doctor.count({ where: { hospitalId } }),
     ]);
-    return { data, meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) } };
+    return paginate(data, total, pagination);
   }
 
   async createDepartment(hospitalId: string, dto: CreateDepartmentDto) {
@@ -212,3 +256,5 @@ export class HospitalsService {
     return { message: 'Department deactivated' };
   }
 }
+
+

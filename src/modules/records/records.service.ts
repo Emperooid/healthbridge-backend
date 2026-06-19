@@ -1,9 +1,10 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateRecordDto } from './dto/create-record.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
@@ -84,10 +85,7 @@ export class RecordsService {
       this.prisma.medicalRecord.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findOne(id: string, requesterId: string, requesterRole: Role) {
@@ -175,10 +173,7 @@ export class RecordsService {
       this.prisma.medicalRecord.count({ where: { patientId: patient.id } }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findByPatient(patientId: string, pagination: PaginationParams, requesterId: string, requesterRole: Role) {
@@ -204,10 +199,7 @@ export class RecordsService {
       this.prisma.medicalRecord.count({ where: { patientId } }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   private buildWhereClause(requesterId: string, role: Role) {
@@ -232,3 +224,6 @@ export class RecordsService {
     }
   }
 }
+
+
+

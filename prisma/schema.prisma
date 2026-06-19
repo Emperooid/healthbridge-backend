@@ -13,6 +13,14 @@ enum Role {
   PATIENT
 }
 
+enum HospitalType {
+  GENERAL
+  CLINIC
+  SPECIALIST
+  TEACHING
+  PRIVATE
+}
+
 enum RecordStatus {
   DRAFT
   ACTIVE
@@ -136,14 +144,18 @@ model EmailVerificationToken {
 }
 
 model Hospital {
-  id        String   @id @default(uuid())
-  name      String
-  address   String
-  phone     String?
-  email     String?  @unique
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String       @id @default(uuid())
+  name          String
+  address       String
+  city          String?
+  state         String?
+  phone         String?
+  email         String?      @unique
+  type          HospitalType @default(GENERAL)
+  licenseNumber String?      @unique
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   doctors       Doctor[]
   patients      Patient[]

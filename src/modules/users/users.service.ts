@@ -1,10 +1,11 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ConflictException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
@@ -59,7 +60,7 @@ export class UsersService {
       }),
       this.prisma.user.count(),
     ]);
-    return { data, meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) } };
+    return paginate(data, total, pagination);
   }
 
   async findOne(id: string) {
@@ -151,3 +152,5 @@ export class UsersService {
     return { message: 'Account created successfully. You can now log in.', user };
   }
 }
+
+

@@ -1,10 +1,11 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ConflictException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
@@ -68,10 +69,7 @@ export class PatientsService {
       this.prisma.patient.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findMe(requesterId: string) {
@@ -188,3 +186,6 @@ export class PatientsService {
     }
   }
 }
+
+
+

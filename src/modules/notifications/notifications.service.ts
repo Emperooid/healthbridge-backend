@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { PaginationParams } from '../../common/decorators/pagination.decorator';
@@ -24,10 +25,7 @@ export class NotificationsService {
       this.prisma.notification.count({ where: { userId } }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async markRead(id: string, userId: string) {
@@ -54,3 +52,6 @@ export class NotificationsService {
     return { message: 'Notification deleted' };
   }
 }
+
+
+

@@ -1,9 +1,10 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
@@ -20,7 +21,7 @@ export class EncountersService {
     private auditService: AuditService,
   ) {}
 
-  // ─── Visits ──────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Visits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async createVisit(dto: CreateVisitDto, requesterId: string) {
     const [patient, doctor, hospital] = await Promise.all([
@@ -97,10 +98,7 @@ export class EncountersService {
       this.prisma.visit.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findOneVisit(id: string, requesterId: string, requesterRole: Role) {
@@ -142,7 +140,7 @@ export class EncountersService {
     return this.prisma.visit.update({ where: { id }, data });
   }
 
-  // ─── Encounters ───────────────────────────────────────────────────────────
+  // â”€â”€â”€ Encounters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async createEncounter(dto: CreateEncounterDto, requesterId: string) {
     const visit = await this.prisma.visit.findUnique({ where: { id: dto.visitId } });
@@ -236,3 +234,6 @@ export class EncountersService {
     }
   }
 }
+
+
+

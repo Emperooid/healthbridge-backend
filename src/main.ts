@@ -8,6 +8,8 @@ const helmet = require('helmet');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -36,6 +38,8 @@ async function bootstrap() {
   });
 
   app.use(cookieParser());
+  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // ── Security headers ────────────────────────────────────────────────────────
   app.use(helmet({

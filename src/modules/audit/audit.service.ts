@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+﻿import { Injectable, Logger } from '@nestjs/common';
+import { paginate } from '../../common/utils/paginate';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Prisma } from '@prisma/client';
@@ -43,10 +44,7 @@ export class AuditService {
       }),
       this.prisma.auditLog.count(),
     ]);
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 
   async findByUser(userId: string, pagination: PaginationParams) {
@@ -59,9 +57,9 @@ export class AuditService {
       }),
       this.prisma.auditLog.count({ where: { userId } }),
     ]);
-    return {
-      data,
-      meta: { total, page: pagination.page, limit: pagination.limit, pages: Math.ceil(total / pagination.limit) },
-    };
+    return paginate(data, total, pagination);
   }
 }
+
+
+
