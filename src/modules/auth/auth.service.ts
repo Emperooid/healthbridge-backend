@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  NotFoundException,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
@@ -333,6 +334,56 @@ export class AuthService {
       await this.redis.set(lockKey, '1', LOCKOUT_SECONDS);
       await this.redis.del(failKey);
     }
+  }
+
+  async verifyInvite(token: string) {
+    const raw = await this.redis.get(`invite:${token}`);
+    if (!raw) throw new NotFoundException('Invitation link is invalid or has expired');
+    const { invitedById: _, ...data } = JSON.parse(raw);
+    return data;
+  }
+
+  async acceptInvite(token: string, password: string) {
+    const raw = await this.redis.get(`invite:${token}`);
+    if (!raw) throw new BadRequestException('Invitation link is invalid or has expired');
+
+    const invite = JSON.parse(raw);
+
+    const existing = await this.prisma.user.findUnique({ where: { email: invite.email } });
+    if (existing) throw new ConflictException('An account already exists for this email');
+
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+    const user = await this.prisma.user.create({
+      data: {
+        email: invite.email,
+        firstName: invite.firstName,
+        lastName: invite.lastName,
+        password: hashedPassword,
+        role: Role.DOCTOR,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
+      },
+    });
+
+    await this.prisma.doctor.create({
+      data: {
+        userId: user.id,
+        hospitalId: invite.hospitalId,
+        specialization: invite.specialization,
+        licenseNumber: invite.licenseNumber,
+      },
+    });
+
+    await this.redis.del(`invite:${token}`);
+
+    const tokens = await this.issueTokenPair(user.id, user.email, user.role);
+    return {
+      message: 'Account created successfully.',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role },
+    };
   }
 
   private async issueTokenPair(userId: string, email: string, role: Role) {

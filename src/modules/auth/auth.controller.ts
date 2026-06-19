@@ -152,6 +152,27 @@ export class AuthController {
     return this.authService.changePassword(userId, dto);
   }
 
+  @Public()
+  @Get('invite/verify')
+  @ApiOperation({ summary: 'Verify invite token and return pre-filled doctor info' })
+  verifyInvite(@Query('token') token: string) {
+    return this.authService.verifyInvite(token);
+  }
+
+  @Public()
+  @Post('accept-invite')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Accept doctor invitation — sets password and creates account' })
+  async acceptInvite(
+    @Body() body: { token: string; password: string },
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.authService.acceptInvite(body.token, body.password);
+    this.setRefreshCookie(res, result.refreshToken);
+    const { refreshToken: _, ...response } = result;
+    return response;
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiBearerAuth()
