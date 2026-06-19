@@ -1,19 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Resend } from 'resend';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private resend: Resend;
-  private from = 'HealthBridge <onboarding@resend.dev>';
+  private transporter: nodemailer.Transporter;
+  private from: string;
 
   constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
+    this.from = `HealthBridge <${process.env.SMTP_USER}>`;
+    this.transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
   }
 
   async sendEmailVerification(to: string, firstName: string, verifyUrl: string) {
     try {
-      await this.resend.emails.send({
+      await this.transporter.sendMail({
         from: this.from,
         to,
         subject: 'Verify your HealthBridge email address',
@@ -41,7 +50,7 @@ export class MailService {
 
   async sendPasswordReset(to: string, firstName: string, resetUrl: string) {
     try {
-      await this.resend.emails.send({
+      await this.transporter.sendMail({
         from: this.from,
         to,
         subject: 'Reset your HealthBridge password',
