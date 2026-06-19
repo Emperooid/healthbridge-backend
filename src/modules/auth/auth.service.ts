@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
@@ -26,6 +27,8 @@ const LOCKOUT_SECONDS = 15 * 60; // 15 minutes
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -181,7 +184,9 @@ export class AuthService {
     const frontendUrl = process.env.FRONTEND_URL || process.env.BACKEND_URL || 'http://localhost:3001';
     const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
 
-    await this.mail.sendPasswordReset(user.email, user.firstName, resetUrl);
+    this.mail.sendPasswordReset(user.email, user.firstName, resetUrl).catch((err) =>
+      this.logger.error('Failed to send password reset email', err),
+    );
 
     return { message: 'If that email exists, a reset link has been sent.' };
   }
@@ -313,7 +318,9 @@ export class AuthService {
 
     const frontendUrl = process.env.FRONTEND_URL || process.env.BACKEND_URL || 'http://localhost:3001';
     const verifyUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
-    await this.mail.sendEmailVerification(email, firstName, verifyUrl);
+    this.mail.sendEmailVerification(email, firstName, verifyUrl).catch((err) =>
+      this.logger.error('Failed to send verification email', err),
+    );
   }
 
   private async recordFailedAttempt(failKey: string, lockKey: string) {
