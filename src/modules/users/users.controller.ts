@@ -16,9 +16,11 @@ import { Role } from '@prisma/client';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto, UpdateRoleDto, UpdateUserStatusDto } from './dto/update-user.dto';
+import { InviteDoctorDto, AcceptInviteDto } from './dto/invite-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Pagination, PaginationParams } from '../../common/decorators/pagination.decorator';
 
@@ -80,5 +82,20 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete user (Admin)' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.remove(id);
+  }
+
+  @Post('invite')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Invite a doctor by email (Admin)' })
+  inviteDoctor(@Body() dto: InviteDoctorDto, @CurrentUser('id') invitedById: string) {
+    return this.usersService.inviteDoctor(dto, invitedById);
+  }
+
+  @Public()
+  @Post('accept-invite')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Accept doctor invitation and set password (public)' })
+  acceptInvite(@Body() dto: AcceptInviteDto) {
+    return this.usersService.acceptInvite(dto);
   }
 }

@@ -50,6 +50,30 @@ export class MailService {
     }
   }
 
+  async sendDoctorInvite(to: string, firstName: string, hospitalName: string, acceptUrl: string) {
+    try {
+      await this.send(to, `You've been invited to join ${hospitalName} on HealthBridge`, `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto">
+          <h2>You're invited, ${firstName}!</h2>
+          <p><strong>${hospitalName}</strong> has invited you to join HealthBridge as a doctor.</p>
+          <p>Click the button below to set your password and activate your account.
+             This link expires in <strong>7 days</strong>.</p>
+          <a href="${acceptUrl}"
+             style="display:inline-block;padding:12px 24px;background:#16a34a;
+                    color:#fff;border-radius:6px;text-decoration:none;font-weight:600">
+            Accept Invitation
+          </a>
+          <p style="margin-top:24px;color:#6b7280;font-size:13px">
+            If you weren't expecting this, you can ignore this email.<br>
+            Link: ${acceptUrl}
+          </p>
+        </div>
+      `);
+    } catch (err: any) {
+      this.logger.error(`Failed to send invite email to ${to}: ${err?.message ?? err}`);
+    }
+  }
+
   async sendPasswordReset(to: string, firstName: string, resetUrl: string) {
     try {
       await this.send(to, 'Reset your HealthBridge password', `

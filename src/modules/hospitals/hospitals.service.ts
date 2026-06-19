@@ -4,8 +4,12 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
+import { RegisterHospitalDto } from './dto/register-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { CreateDepartmentDto } from './dto/create-department.dto';
@@ -16,7 +20,54 @@ import { PaginationParams } from '../../common/decorators/pagination.decorator';
 
 @Injectable()
 export class HospitalsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+  ) {}
+
+  async register(dto: RegisterHospitalDto) {
+    const [emailUser, emailHospital] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email: dto.adminEmail } }),
+      this.prisma.hospital.findUnique({ where: { email: dto.hospitalEmail } }),
+    ]);
+    if (emailUser) throw new ConflictException('Admin email already registered');
+    if (emailHospital) throw new ConflictException('Hospital email already registered');
+
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
+
+    const [hospital, user] = await Promise.all([
+      this.prisma.hospital.create({
+        data: { name: dto.hospitalName, address: dto.hospitalAddress, phone: dto.hospitalPhone, email: dto.hospitalEmail },
+      }),
+      this.prisma.user.create({
+        data: { firstName: dto.firstName, lastName: dto.lastName, email: dto.adminEmail, password: hashedPassword, phone: dto.adminPhone, role: Role.ADMIN },
+      }),
+    ]);
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+    await this.prisma.emailVerificationToken.create({
+      data: { userId: user.id, token: hashedToken, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    this.mail.sendEmailVerification(user.email, user.firstName, `${frontendUrl}/verify-email?token=${rawToken}`)
+      .catch(() => undefined);
+
+    return {
+      message: 'Hospital registered. Please verify your email to activate your account.',
+      hospital: { id: hospital.id, name: hospital.name },
+      admin: { id: user.id, email: user.email },
+    };
+  }
+
+  async findPublic() {
+    return this.prisma.hospital.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, address: true, phone: true, email: true },
+    });
+  }
 
   async create(dto: CreateHospitalDto) {
     if (dto.email) {

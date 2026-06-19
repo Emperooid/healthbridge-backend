@@ -15,6 +15,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { HospitalsService } from './hospitals.service';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
+import { RegisterHospitalDto } from './dto/register-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { CreateDepartmentDto } from './dto/create-department.dto';
@@ -23,6 +24,7 @@ import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { Pagination, PaginationParams } from '../../common/decorators/pagination.decorator';
 
 @ApiTags('hospitals')
@@ -31,6 +33,21 @@ import { Pagination, PaginationParams } from '../../common/decorators/pagination
 @Controller('hospitals')
 export class HospitalsController {
   constructor(private readonly hospitalsService: HospitalsService) {}
+
+  @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Hospital self-registration (public)' })
+  register(@Body() dto: RegisterHospitalDto) {
+    return this.hospitalsService.register(dto);
+  }
+
+  @Public()
+  @Get('public')
+  @ApiOperation({ summary: 'Public hospital list for registration forms' })
+  findPublic() {
+    return this.hospitalsService.findPublic();
+  }
 
   @Post()
   @Roles(Role.ADMIN)
