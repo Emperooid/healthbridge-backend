@@ -35,7 +35,7 @@ export class FilesController {
   @ApiOperation({ summary: 'Upload a file to a medical record' })
   upload(
     @Param('recordId', ParseUUIDPipe) recordId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
     @CurrentUser('id') uploaderId: string,
   ) {
     return this.filesService.upload(file, recordId, uploaderId);

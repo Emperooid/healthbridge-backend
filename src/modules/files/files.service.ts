@@ -43,7 +43,7 @@ export class FilesService {
   }
 
   async upload(
-    file: Express.Multer.File,
+    file: any,
     recordId: string,
     uploaderId: string,
   ) {
