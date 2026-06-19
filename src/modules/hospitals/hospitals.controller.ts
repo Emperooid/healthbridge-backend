@@ -19,6 +19,7 @@ import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -70,6 +71,17 @@ export class HospitalsController {
   @ApiOperation({ summary: 'Assign a doctor to a hospital (Admin)' })
   assignDoctor(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignDoctorDto) {
     return this.hospitalsService.assignDoctor(id, dto);
+  }
+
+  @Patch(':hospitalId/doctors/:doctorId')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Update doctor profile within a hospital (Admin)' })
+  updateDoctor(
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Param('doctorId', ParseUUIDPipe) doctorId: string,
+    @Body() dto: UpdateDoctorDto,
+  ) {
+    return this.hospitalsService.updateDoctor(hospitalId, doctorId, dto);
   }
 
   @Get(':id/doctors')

@@ -16,6 +16,7 @@ import { Role } from '@prisma/client';
 import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
+import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -69,6 +70,18 @@ export class PatientsController {
     @CurrentUser('role') requesterRole: Role,
   ) {
     return this.patientsService.update(id, dto, requesterId, requesterRole);
+  }
+
+  @Patch(':id/assign-doctor')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Assign a doctor to a patient (Admin/Doctor)' })
+  assignDoctor(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignDoctorDto,
+    @CurrentUser('id') requesterId: string,
+    @CurrentUser('role') requesterRole: Role,
+  ) {
+    return this.patientsService.assignDoctor(id, dto, requesterId, requesterRole);
   }
 
   @Delete(':id')

@@ -10,6 +10,7 @@ import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { CreateDepartmentDto } from './dto/create-department.dto';
 import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { Role } from '@prisma/client';
 import { PaginationParams } from '../../common/decorators/pagination.decorator';
 
@@ -129,6 +130,23 @@ export class HospitalsService {
     return this.prisma.department.update({
       where: { id: departmentId },
       data: dto,
+    });
+  }
+
+  async updateDoctor(hospitalId: string, doctorId: string, dto: UpdateDoctorDto) {
+    const doctor = await this.prisma.doctor.findUnique({ where: { id: doctorId } });
+    if (!doctor) throw new NotFoundException('Doctor not found');
+    if (doctor.hospitalId !== hospitalId) throw new BadRequestException('Doctor does not belong to this hospital');
+
+    if (dto.licenseNumber && dto.licenseNumber !== doctor.licenseNumber) {
+      const conflict = await this.prisma.doctor.findUnique({ where: { licenseNumber: dto.licenseNumber } });
+      if (conflict) throw new ConflictException('License number already in use');
+    }
+
+    return this.prisma.doctor.update({
+      where: { id: doctorId },
+      data: dto,
+      include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
     });
   }
 

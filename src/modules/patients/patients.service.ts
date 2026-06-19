@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
+import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { Role } from '@prisma/client';
 import { PaginationParams } from '../../common/decorators/pagination.decorator';
 import { RedisService } from '../redis/redis.service';
@@ -139,6 +140,32 @@ export class PatientsService {
     });
 
     await this.redis.del(`patient:${id}`);
+    return updated;
+  }
+
+  async assignDoctor(patientId: string, dto: AssignDoctorDto, requesterId: string, requesterRole: Role) {
+    const patient = await this.prisma.patient.findUnique({ where: { id: patientId } });
+    if (!patient) throw new NotFoundException(`Patient ${patientId} not found`);
+
+    if (requesterRole === Role.PATIENT) throw new ForbiddenException('Patients cannot assign doctors');
+
+    const doctor = await this.prisma.doctor.findUnique({ where: { id: dto.doctorId } });
+    if (!doctor) throw new NotFoundException('Doctor not found');
+    if (doctor.hospitalId !== patient.hospitalId) {
+      throw new BadRequestException('Doctor must belong to the same hospital as the patient');
+    }
+
+    const updated = await this.prisma.patient.update({
+      where: { id: patientId },
+      data: { assignedDoctorId: dto.doctorId },
+      include: {
+        user: { select: { firstName: true, lastName: true, email: true } },
+        assignedDoctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+        hospital: { select: { name: true } },
+      },
+    });
+
+    await this.redis.del(`patient:${patientId}`);
     return updated;
   }
 
