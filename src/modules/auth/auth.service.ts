@@ -224,7 +224,7 @@ export class AuthService {
       for (const t of tokens) {
         const match = await bcrypt.compare(incomingRefreshToken, t.token);
         if (match) {
-          await this.prisma.refreshToken.delete({ where: { id: t.id } });
+          await this.prisma.refreshToken.deleteMany({ where: { id: t.id } });
           break;
         }
       }
