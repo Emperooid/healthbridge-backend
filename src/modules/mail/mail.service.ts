@@ -11,15 +11,15 @@ export class MailService {
     this.from = `HealthBridge <${process.env.SMTP_USER}>`;
     this.transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
+      port: 465,
+      secure: true,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 10000,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
   }
 
@@ -46,8 +46,8 @@ export class MailService {
           </div>
         `,
       });
-    } catch (err) {
-      this.logger.error(`Failed to send verification email to ${to}`, err);
+    } catch (err: any) {
+      this.logger.error(`Failed to send verification email to ${to}: ${err?.message ?? err}`);
     }
   }
 
