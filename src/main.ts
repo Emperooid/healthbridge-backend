@@ -98,7 +98,8 @@ async function bootstrap() {
   }
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`HealthBridge API running on http://localhost:${port}/api/v1`);
+  await app.listen(port, '0.0.0.0');
+  const url = process.env.BACKEND_URL || `http://localhost:${port}`;
+  console.log(`HealthBridge API running on ${url}/api/v1`);
 }
 bootstrap();
