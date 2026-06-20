@@ -62,6 +62,8 @@ export class HospitalsService {
         password: hashedPassword,
         phone: dto.adminPhone,
         role: Role.ADMIN,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
       },
       select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
