@@ -21,8 +21,9 @@ export class SharingService {
     if (!patient) throw new NotFoundException('Patient profile not found');
 
     const token = crypto.randomUUID();
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + dto.expiresInHours);
+    const expiresAt = dto.expiresAt
+      ? new Date(dto.expiresAt)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     return this.prisma.shareLink.create({
       data: {
@@ -87,26 +88,46 @@ export class SharingService {
     const scope = link.scope;
     const patientId = link.patientId;
 
-    const [records, files] = await Promise.all([
-      (scope === 'ALL' || scope === 'RECORDS' || scope === 'PRESCRIPTIONS')
-        ? this.prisma.medicalRecord.findMany({
-            where: { patientId },
-            orderBy: { visitDate: 'desc' },
-            select: {
-              id: true, title: true, diagnosis: true, treatment: true,
-              prescription: true, visitDate: true, status: true,
-            },
-          })
-        : [],
-      (scope === 'ALL' || scope === 'LABS')
-        ? this.prisma.fileUpload.findMany({
-            where: { record: { patientId } },
-            select: { id: true, originalName: true, mimeType: true, createdAt: true },
-          })
-        : [],
-    ]);
+    const rawRecords = (scope === 'ALL' || scope === 'RECORDS' || scope === 'PRESCRIPTIONS')
+      ? await this.prisma.medicalRecord.findMany({
+          where: { patientId },
+          orderBy: { visitDate: 'desc' },
+          include: {
+            doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+            hospital: { select: { name: true } },
+            files: true,
+          },
+        })
+      : [];
 
-    return { patient: link.patient, scope, expiresAt: link.expiresAt, records, files };
+    const records = rawRecords.map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      diagnosis: r.diagnosis,
+      treatment: r.treatment,
+      prescription: r.prescription,
+      status: r.status,
+      doctorName: r.doctor ? `Dr. ${r.doctor.user.firstName} ${r.doctor.user.lastName}` : null,
+      hospitalName: r.hospital?.name ?? null,
+      visitDate: r.visitDate,
+      createdAt: r.createdAt,
+      attachments: (r.files ?? []).map((f) => ({
+        id: f.id,
+        name: f.originalName,
+        url: f.url ?? null,
+        type: f.mimeType,
+        size: f.size,
+        uploadedAt: f.createdAt,
+      })),
+    }));
+
+    const patientData = {
+      id: link.patient.id,
+      name: `${(link.patient as any).user.firstName} ${(link.patient as any).user.lastName}`,
+    };
+
+    return { patient: patientData, scope, expiresAt: link.expiresAt, records };
   }
 
   // ─── Share Grants ──────────────────────────────────────────────────────────

@@ -51,23 +51,56 @@ export class PatientsService {
     });
   }
 
-  async findAll(pagination: PaginationParams, requesterId: string, requesterRole: Role) {
-    const where = requesterRole === Role.PATIENT ? { userId: requesterId } : {};
+  async findAll(
+    pagination: PaginationParams,
+    requesterId: string,
+    requesterRole: Role,
+    filters: { search?: string; hospitalId?: string; doctorId?: string } = {},
+  ) {
+    const { search, hospitalId, doctorId } = filters;
 
-    const [data, total] = await Promise.all([
-      this.prisma.patient.findMany({
-        where,
-        skip: pagination.skip,
-        take: pagination.limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: { select: { firstName: true, lastName: true, email: true } },
-          hospital: { select: { name: true } },
-          _count: { select: { records: true } },
-        },
-      }),
+    const base: any = {
+      ...(hospitalId ? { hospitalId } : {}),
+      ...(doctorId ? { assignedDoctorId: doctorId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { user: { firstName: { contains: search, mode: 'insensitive' } } },
+              { user: { lastName: { contains: search, mode: 'insensitive' } } },
+              { user: { email: { contains: search, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+
+    const where = requesterRole === Role.PATIENT ? { ...base, userId: requesterId } : base;
+
+    const include = {
+      user: { select: { firstName: true, lastName: true, email: true, phone: true } },
+      hospital: { select: { name: true } },
+      assignedDoctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+      visits: { take: 1, orderBy: { startTime: 'desc' as const }, select: { startTime: true } },
+    };
+
+    const [raw, total] = await Promise.all([
+      this.prisma.patient.findMany({ where, skip: pagination.skip, take: pagination.limit, orderBy: { createdAt: 'desc' }, include }),
       this.prisma.patient.count({ where }),
     ]);
+
+    const data = raw.map((p) => ({
+      id: p.id,
+      userId: p.userId,
+      name: `${p.user.firstName} ${p.user.lastName}`,
+      email: p.user.email,
+      dateOfBirth: p.dateOfBirth,
+      gender: p.gender,
+      bloodType: p.bloodType,
+      hospitalName: p.hospital?.name ?? null,
+      assignedDoctorName: p.assignedDoctor
+        ? `Dr. ${p.assignedDoctor.user.firstName} ${p.assignedDoctor.user.lastName}`
+        : null,
+      lastVisit: p.visits[0]?.startTime ?? null,
+    }));
 
     return paginate(data, total, pagination);
   }
@@ -76,18 +109,14 @@ export class PatientsService {
     const patient = await this.prisma.patient.findUnique({
       where: { userId: requesterId },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, email: true } },
-        hospital: { select: { id: true, name: true, address: true } },
-        records: {
-          take: 5,
-          orderBy: { visitDate: 'desc' },
-          select: { id: true, title: true, visitDate: true, status: true },
-        },
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        hospital: { select: { id: true, name: true } },
+        assignedDoctor: { include: { user: { select: { firstName: true, lastName: true } } } },
       },
     });
 
     if (!patient) throw new NotFoundException('No patient profile found for this account. Create one first.');
-    return patient;
+    return this.flattenPatient(patient);
   }
 
   async findOne(id: string, requesterId: string, requesterRole: Role) {
@@ -98,21 +127,41 @@ export class PatientsService {
     const patient = await this.prisma.patient.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, email: true } },
-        hospital: { select: { id: true, name: true, address: true } },
-        records: {
-          take: 5,
-          orderBy: { visitDate: 'desc' },
-          select: { id: true, title: true, visitDate: true, status: true },
-        },
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+        hospital: { select: { id: true, name: true } },
+        assignedDoctor: { include: { user: { select: { firstName: true, lastName: true } } } },
       },
     });
 
     if (!patient) throw new NotFoundException(`Patient ${id} not found`);
-
     this.canAccessPatient(patient, requesterId, requesterRole);
-    await this.redis.set(cacheKey, JSON.stringify(patient), PATIENT_CACHE_TTL);
-    return patient;
+
+    const flat = this.flattenPatient(patient);
+    await this.redis.set(cacheKey, JSON.stringify(flat), PATIENT_CACHE_TTL);
+    return flat;
+  }
+
+  private flattenPatient(p: any) {
+    return {
+      id: p.id,
+      userId: p.userId,
+      name: `${p.user.firstName} ${p.user.lastName}`,
+      email: p.user.email,
+      phone: p.user.phone,
+      dateOfBirth: p.dateOfBirth,
+      gender: p.gender,
+      bloodType: p.bloodType,
+      allergies: p.allergies,
+      emergencyContact: p.emergencyContact,
+      hospitalId: p.hospitalId,
+      hospitalName: p.hospital?.name ?? null,
+      assignedDoctorId: p.assignedDoctorId,
+      assignedDoctorName: p.assignedDoctor
+        ? `Dr. ${p.assignedDoctor.user.firstName} ${p.assignedDoctor.user.lastName}`
+        : null,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
   }
 
   async update(id: string, dto: UpdatePatientDto, requesterId: string, requesterRole: Role) {

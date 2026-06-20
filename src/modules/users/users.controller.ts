@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   Delete,
   UseGuards,
   ParseUUIDPipe,
@@ -41,8 +42,13 @@ export class UsersController {
   @Get()
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'List all users (Admin)' })
-  findAll(@Pagination() pagination: PaginationParams) {
-    return this.usersService.findAll(pagination);
+  findAll(
+    @Pagination() pagination: PaginationParams,
+    @Query('search') search?: string,
+    @Query('role') role?: string,
+    @Query('hospitalId') hospitalId?: string,
+  ) {
+    return this.usersService.findAll(pagination, { search, role, hospitalId });
   }
 
   @Get(':id')

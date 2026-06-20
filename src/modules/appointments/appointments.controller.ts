@@ -53,10 +53,11 @@ export class AppointmentsController {
     @Query('status') status?: AppointmentStatus,
     @Query('patientId') patientId?: string,
     @Query('doctorId') doctorId?: string,
+    @Query('hospitalId') hospitalId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.appointmentsService.findAll(pagination, requesterId, requesterRole, { status, patientId, doctorId, from, to });
+    return this.appointmentsService.findAll(pagination, requesterId, requesterRole, { status, patientId, doctorId, hospitalId, from, to });
   }
 
   @Get('mine')

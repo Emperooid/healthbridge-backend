@@ -121,16 +121,22 @@ export class HospitalsService {
     return this.prisma.hospital.create({ data: dto });
   }
 
-  async findAll(pagination: PaginationParams) {
+  async findAll(pagination: PaginationParams, filters: { search?: string; isActive?: boolean } = {}) {
+    const { search, isActive } = filters;
+    const where: any = {
+      ...(isActive !== undefined ? { isActive } : { isActive: true }),
+      ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+    };
+
     const [data, total] = await Promise.all([
       this.prisma.hospital.findMany({
         skip: pagination.skip,
         take: pagination.limit,
-        where: { isActive: true },
+        where,
         orderBy: { name: 'asc' },
         include: { _count: { select: { doctors: true, patients: true } } },
       }),
-      this.prisma.hospital.count({ where: { isActive: true } }),
+      this.prisma.hospital.count({ where }),
     ]);
     return paginate(data, total, pagination);
   }
@@ -185,18 +191,27 @@ export class HospitalsService {
     });
   }
 
-  async getDoctors(hospitalId: string, pagination: PaginationParams) {
+  async getDoctors(hospitalId: string) {
     await this.findOne(hospitalId);
-    const [data, total] = await Promise.all([
-      this.prisma.doctor.findMany({
-        where: { hospitalId },
-        skip: pagination.skip,
-        take: pagination.limit,
-        include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
-      }),
-      this.prisma.doctor.count({ where: { hospitalId } }),
-    ]);
-    return paginate(data, total, pagination);
+    const doctors = await this.prisma.doctor.findMany({
+      where: { hospitalId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        _count: { select: { assignedPatients: true } },
+      },
+    });
+
+    return doctors.map((d) => ({
+      id: d.id,
+      userId: d.userId,
+      name: `${d.user.firstName} ${d.user.lastName}`,
+      email: d.user.email,
+      specialization: d.specialization,
+      licenseNumber: d.licenseNumber,
+      patientCount: d._count.assignedPatients,
+      joinedAt: d.createdAt,
+    }));
   }
 
   async createDepartment(hospitalId: string, dto: CreateDepartmentDto) {

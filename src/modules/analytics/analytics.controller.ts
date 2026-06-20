@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { AnalyticsService } from './analytics.service';
@@ -21,38 +21,38 @@ export class AnalyticsController {
   }
 
   @Get('patients')
-  @ApiOperation({ summary: 'Patient registration statistics (Admin)' })
-  getPatientStats() {
-    return this.analyticsService.getPatientStats();
+  @ApiOperation({ summary: 'Patient registrations time series (Admin)' })
+  getPatientStats(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getPatientTimeSeries(from, to);
   }
 
   @Get('appointments')
-  @ApiOperation({ summary: 'Appointment statistics (Admin)' })
-  getAppointmentStats() {
-    return this.analyticsService.getAppointmentStats();
+  @ApiOperation({ summary: 'Appointments time series (Admin)' })
+  getAppointmentStats(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getAppointmentTimeSeries(from, to);
   }
 
   @Get('records')
-  @ApiOperation({ summary: 'Medical record statistics (Admin)' })
-  getRecordStats() {
-    return this.analyticsService.getRecordStats();
-  }
-
-  @Get('hospitals')
-  @ApiOperation({ summary: 'Per-hospital utilization statistics (Admin)' })
-  getHospitalStats() {
-    return this.analyticsService.getHospitalStats();
+  @ApiOperation({ summary: 'Medical records time series (Admin)' })
+  getRecordStats(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getRecordTimeSeries(from, to);
   }
 
   @Get('labs')
-  @ApiOperation({ summary: 'Lab order and result statistics (Admin)' })
-  getLabStats() {
-    return this.analyticsService.getLabStats();
+  @ApiOperation({ summary: 'Lab orders time series (Admin)' })
+  getLabStats(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getLabTimeSeries(from, to);
   }
 
   @Get('prescriptions')
-  @ApiOperation({ summary: 'Prescription statistics (Admin)' })
-  getPrescriptionStats() {
-    return this.analyticsService.getPrescriptionStats();
+  @ApiOperation({ summary: 'Prescriptions time series (Admin)' })
+  getPrescriptionStats(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getPrescriptionTimeSeries(from, to);
+  }
+
+  @Get('hospitals')
+  @ApiOperation({ summary: 'Per-hospital patient count (Admin)' })
+  getHospitalStats() {
+    return this.analyticsService.getHospitalBreakdown();
   }
 }

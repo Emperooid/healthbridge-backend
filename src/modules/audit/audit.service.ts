@@ -1,4 +1,4 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { paginate } from '../../common/utils/paginate';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -28,38 +28,77 @@ export class AuditService {
     } catch (err) {
       this.logger.warn(`Queue unavailable, persisting audit log synchronously: ${err.message}`);
       const { userId, action, resource, resourceId, details, ipAddress, userAgent } = dto;
-      await this.prisma.auditLog.create({ data: { userId, action, resource, resourceId, details: details as Prisma.InputJsonValue, ipAddress, userAgent } }).catch((e) => {
-        this.logger.error('Failed to persist audit log synchronously', e);
-      });
+      await this.prisma.auditLog
+        .create({ data: { userId, action, resource, resourceId, details: details as Prisma.InputJsonValue, ipAddress, userAgent } })
+        .catch((e) => { this.logger.error('Failed to persist audit log synchronously', e); });
     }
   }
 
-  async findAll(pagination: PaginationParams) {
-    const [data, total] = await Promise.all([
+  async findAll(
+    pagination: PaginationParams,
+    filters: { userId?: string; action?: string; resourceType?: string; startDate?: string; endDate?: string } = {},
+  ) {
+    const { userId, action, resourceType, startDate, endDate } = filters;
+
+    const where: any = {
+      ...(userId ? { userId } : {}),
+      ...(action ? { action } : {}),
+      ...(resourceType ? { resource: resourceType } : {}),
+      ...((startDate || endDate) ? {
+        createdAt: {
+          ...(startDate ? { gte: new Date(startDate) } : {}),
+          ...(endDate ? { lte: new Date(endDate) } : {}),
+        },
+      } : {}),
+    };
+
+    const [raw, total] = await Promise.all([
       this.prisma.auditLog.findMany({
+        where,
         skip: pagination.skip,
         take: pagination.limit,
         orderBy: { createdAt: 'desc' },
-        include: { user: { select: { firstName: true, lastName: true, email: true } } },
+        include: { user: { select: { firstName: true, lastName: true, email: true, role: true } } },
       }),
-      this.prisma.auditLog.count(),
+      this.prisma.auditLog.count({ where }),
     ]);
+
+    const data = raw.map((log) => ({
+      id: log.id,
+      userId: log.userId,
+      userName: log.user ? `${log.user.firstName} ${log.user.lastName}` : null,
+      userRole: log.user?.role ?? null,
+      action: log.action,
+      resourceType: log.resource,
+      resourceId: log.resourceId,
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent,
+      timestamp: log.createdAt,
+      details: log.details,
+    }));
+
     return paginate(data, total, pagination);
   }
 
-  async findByUser(userId: string, pagination: PaginationParams) {
-    const [data, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
-        where: { userId },
-        skip: pagination.skip,
-        take: pagination.limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.auditLog.count({ where: { userId } }),
-    ]);
-    return paginate(data, total, pagination);
+  async findByUser(userId: string) {
+    const raw = await this.prisma.auditLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { user: { select: { firstName: true, lastName: true, role: true } } },
+    });
+
+    return raw.map((log) => ({
+      id: log.id,
+      userId: log.userId,
+      userName: log.user ? `${log.user.firstName} ${log.user.lastName}` : null,
+      userRole: log.user?.role ?? null,
+      action: log.action,
+      resourceType: log.resource,
+      resourceId: log.resourceId,
+      ipAddress: log.ipAddress,
+      timestamp: log.createdAt,
+      details: log.details,
+    }));
   }
 }
-
-
-

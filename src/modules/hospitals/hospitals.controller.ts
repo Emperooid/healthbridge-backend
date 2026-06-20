@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   Delete,
   Res,
   UseGuards,
@@ -69,8 +70,13 @@ export class HospitalsController {
 
   @Get()
   @ApiOperation({ summary: 'List all hospitals' })
-  findAll(@Pagination() pagination: PaginationParams) {
-    return this.hospitalsService.findAll(pagination);
+  findAll(
+    @Pagination() pagination: PaginationParams,
+    @Query('search') search?: string,
+    @Query('isActive') isActive?: string,
+  ) {
+    const isActiveBool = isActive === undefined ? undefined : isActive !== 'false';
+    return this.hospitalsService.findAll(pagination, { search, isActive: isActiveBool });
   }
 
   @Get(':id')
@@ -113,12 +119,9 @@ export class HospitalsController {
   }
 
   @Get(':id/doctors')
-  @ApiOperation({ summary: 'List doctors in a hospital' })
-  getDoctors(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Pagination() pagination: PaginationParams,
-  ) {
-    return this.hospitalsService.getDoctors(id, pagination);
+  @ApiOperation({ summary: 'List doctors in a hospital (unpaginated dropdown)' })
+  getDoctors(@Param('id', ParseUUIDPipe) id: string) {
+    return this.hospitalsService.getDoctors(id);
   }
 
   // ─── Departments ──────────────────────────────────────────────────────────

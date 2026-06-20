@@ -50,15 +50,42 @@ export class UsersService {
     });
   }
 
-  async findAll(pagination: PaginationParams) {
+  async findAll(
+    pagination: PaginationParams,
+    filters: { search?: string; role?: string; hospitalId?: string } = {},
+  ) {
+    const { search, role, hospitalId } = filters;
+
+    const where: any = {
+      ...(role ? { role } : {}),
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(hospitalId
+        ? {
+            OR: [
+              { doctor: { hospitalId } },
+              { patient: { hospitalId } },
+            ],
+          }
+        : {}),
+    };
+
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
+        where,
         skip: pagination.skip,
         take: pagination.limit,
         orderBy: { createdAt: 'desc' },
         select: SAFE_USER_SELECT,
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where }),
     ]);
     return paginate(data, total, pagination);
   }

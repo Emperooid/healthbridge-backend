@@ -88,11 +88,11 @@ export class AppointmentsService {
     pagination: PaginationParams,
     requesterId: string,
     requesterRole: Role,
-    filters: { status?: AppointmentStatus; patientId?: string; doctorId?: string; from?: string; to?: string },
+    filters: { status?: AppointmentStatus; patientId?: string; doctorId?: string; hospitalId?: string; from?: string; to?: string },
   ) {
     const where: any = this.buildWhere(requesterId, requesterRole, filters);
 
-    const [data, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.appointment.findMany({
         where,
         skip: pagination.skip,
@@ -107,7 +107,7 @@ export class AppointmentsService {
       this.prisma.appointment.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(raw.map(this.formatAppointment), total, pagination);
   }
 
   async findOne(id: string, requesterId: string, requesterRole: Role) {
@@ -227,7 +227,7 @@ export class AppointmentsService {
       where = { doctorId: doctor.id };
     }
 
-    const [data, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.appointment.findMany({
         where,
         skip: pagination.skip,
@@ -242,19 +242,40 @@ export class AppointmentsService {
       this.prisma.appointment.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(raw.map(this.formatAppointment), total, pagination);
+  }
+
+  private formatAppointment(a: any) {
+    return {
+      id: a.id,
+      patientId: a.patientId,
+      patientName: a.patient ? `${a.patient.user.firstName} ${a.patient.user.lastName}` : null,
+      doctorId: a.doctorId,
+      doctorName: a.doctor ? `Dr. ${a.doctor.user.firstName} ${a.doctor.user.lastName}` : null,
+      hospitalId: a.hospitalId,
+      hospitalName: a.hospital?.name ?? null,
+      title: a.title,
+      reason: a.reason,
+      type: a.type,
+      status: a.status,
+      scheduledAt: a.scheduledAt,
+      duration: a.durationMinutes,
+      notes: a.notes,
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    };
   }
 
   private buildWhere(
     requesterId: string,
     role: Role,
-    filters: { status?: AppointmentStatus; patientId?: string; doctorId?: string; from?: string; to?: string },
+    filters: { status?: AppointmentStatus; patientId?: string; doctorId?: string; hospitalId?: string; from?: string; to?: string },
   ) {
-    const { status, patientId, doctorId, from, to } = filters;
+    const { status, patientId, doctorId, hospitalId, from, to } = filters;
     const dateFilter = (from || to) ? {
       scheduledAt: {
         ...(from ? { gte: new Date(from) } : {}),
-        ...(to ? { lte: new Date(to) } : {}),
+        ...(to ? { lt: new Date(to) } : {}),
       },
     } : {};
 
@@ -262,6 +283,7 @@ export class AppointmentsService {
       ...(status ? { status } : {}),
       ...(patientId ? { patientId } : {}),
       ...(doctorId ? { doctorId } : {}),
+      ...(hospitalId ? { hospitalId } : {}),
       ...dateFilter,
     };
 

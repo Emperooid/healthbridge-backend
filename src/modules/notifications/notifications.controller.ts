@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Delete, Param, ParseUUIDPipe, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Patch, Delete, Param, Query, ParseUUIDPipe, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -17,8 +17,10 @@ export class NotificationsController {
   findAll(
     @CurrentUser('id') userId: string,
     @Pagination() pagination: PaginationParams,
+    @Query('read') read?: string,
   ) {
-    return this.notificationsService.findAll(userId, pagination);
+    const readBool = read === undefined ? undefined : read === 'true';
+    return this.notificationsService.findAll(userId, pagination, readBool);
   }
 
   @Get('unread-count')

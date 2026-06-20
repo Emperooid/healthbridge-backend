@@ -5,6 +5,7 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   Delete,
   UseGuards,
   ParseUUIDPipe,
@@ -41,8 +42,11 @@ export class PatientsController {
     @Pagination() pagination: PaginationParams,
     @CurrentUser('id') requesterId: string,
     @CurrentUser('role') requesterRole: Role,
+    @Query('search') search?: string,
+    @Query('hospitalId') hospitalId?: string,
+    @Query('doctorId') doctorId?: string,
   ) {
-    return this.patientsService.findAll(pagination, requesterId, requesterRole);
+    return this.patientsService.findAll(pagination, requesterId, requesterRole, { search, hospitalId, doctorId });
   }
 
   @Get('me')

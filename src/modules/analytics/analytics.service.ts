@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { AppointmentStatus, LabOrderStatus, PrescriptionStatus, RecordStatus } from '@prisma/client';
 
 @Injectable()
 export class AnalyticsService {
   constructor(private prisma: PrismaService) {}
 
   async getOverview() {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
     const [
       totalPatients,
       totalDoctors,
@@ -15,7 +17,8 @@ export class AnalyticsService {
       totalAppointments,
       totalLabOrders,
       totalPrescriptions,
-      totalVisits,
+      newPatientsThisMonth,
+      appointmentsThisMonth,
     ] = await Promise.all([
       this.prisma.patient.count(),
       this.prisma.doctor.count(),
@@ -24,134 +27,87 @@ export class AnalyticsService {
       this.prisma.appointment.count(),
       this.prisma.labOrder.count(),
       this.prisma.prescription.count(),
-      this.prisma.visit.count(),
+      this.prisma.patient.count({ where: { createdAt: { gte: startOfMonth } } }),
+      this.prisma.appointment.count({ where: { createdAt: { gte: startOfMonth } } }),
     ]);
 
     return {
       totalPatients,
       totalDoctors,
       totalHospitals,
-      totalRecords,
       totalAppointments,
+      totalRecords,
       totalLabOrders,
       totalPrescriptions,
-      totalVisits,
+      newPatientsThisMonth,
+      appointmentsThisMonth,
     };
   }
 
-  async getPatientStats() {
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-
-    const [total, newThisMonth, newLastMonth, byGender, byBloodType] = await Promise.all([
-      this.prisma.patient.count(),
-      this.prisma.patient.count({ where: { createdAt: { gte: thirtyDaysAgo } } }),
-      this.prisma.patient.count({ where: { createdAt: { gte: sixtyDaysAgo, lt: thirtyDaysAgo } } }),
-      this.prisma.patient.groupBy({ by: ['gender'], _count: { id: true } }),
-      this.prisma.patient.groupBy({ by: ['bloodType'], _count: { id: true } }),
-    ]);
-
-    return {
-      total,
-      newThisMonth,
-      newLastMonth,
-      growthRate: newLastMonth > 0 ? (((newThisMonth - newLastMonth) / newLastMonth) * 100).toFixed(1) + '%' : 'N/A',
-      byGender: byGender.map((g) => ({ gender: g.gender ?? 'Unknown', count: g._count.id })),
-      byBloodType: byBloodType.map((b) => ({ bloodType: b.bloodType ?? 'Unknown', count: b._count.id })),
-    };
+  async getPatientTimeSeries(from?: string, to?: string) {
+    return this.buildTimeSeries('patient', from, to);
   }
 
-  async getAppointmentStats() {
-    const [total, byStatus, upcoming] = await Promise.all([
-      this.prisma.appointment.count(),
-      this.prisma.appointment.groupBy({ by: ['status'], _count: { id: true } }),
-      this.prisma.appointment.count({
-        where: {
-          scheduledAt: { gte: new Date() },
-          status: { notIn: [AppointmentStatus.CANCELLED] },
-        },
-      }),
-    ]);
-
-    return {
-      total,
-      upcoming,
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
-    };
+  async getAppointmentTimeSeries(from?: string, to?: string) {
+    return this.buildTimeSeries('appointment', from, to);
   }
 
-  async getRecordStats() {
-    const [total, byStatus, recentRecords] = await Promise.all([
-      this.prisma.medicalRecord.count(),
-      this.prisma.medicalRecord.groupBy({ by: ['status'], _count: { id: true } }),
-      this.prisma.medicalRecord.count({
-        where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
-      }),
-    ]);
-
-    return {
-      total,
-      createdThisMonth: recentRecords,
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
-    };
+  async getRecordTimeSeries(from?: string, to?: string) {
+    return this.buildTimeSeries('medicalRecord', from, to);
   }
 
-  async getHospitalStats() {
+  async getLabTimeSeries(from?: string, to?: string) {
+    return this.buildTimeSeries('labOrder', from, to);
+  }
+
+  async getPrescriptionTimeSeries(from?: string, to?: string) {
+    return this.buildTimeSeries('prescription', from, to);
+  }
+
+  async getHospitalBreakdown() {
     const hospitals = await this.prisma.hospital.findMany({
       where: { isActive: true },
-      include: {
-        _count: {
-          select: {
-            patients: true,
-            doctors: true,
-            appointments: true,
-            records: true,
-            departments: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'asc' },
+      include: { _count: { select: { patients: true } } },
+      orderBy: { name: 'asc' },
     });
 
     return hospitals.map((h) => ({
-      id: h.id,
-      name: h.name,
-      patients: h._count.patients,
-      doctors: h._count.doctors,
-      appointments: h._count.appointments,
-      records: h._count.records,
-      departments: h._count.departments,
+      label: h.name,
+      value: h._count.patients,
     }));
   }
 
-  async getLabStats() {
-    const [total, byStatus, abnormalResults] = await Promise.all([
-      this.prisma.labOrder.count(),
-      this.prisma.labOrder.groupBy({ by: ['status'], _count: { id: true } }),
-      this.prisma.labResult.count({ where: { isAbnormal: true } }),
-    ]);
+  private async buildTimeSeries(
+    model: 'patient' | 'appointment' | 'medicalRecord' | 'labOrder' | 'prescription',
+    from?: string,
+    to?: string,
+  ) {
+    const start = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const end = to ? new Date(to) : new Date();
 
-    return {
-      totalOrders: total,
-      abnormalResults,
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
-    };
-  }
+    const records = await (this.prisma[model] as any).findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
 
-  async getPrescriptionStats() {
-    const [total, byStatus, recentCount] = await Promise.all([
-      this.prisma.prescription.count(),
-      this.prisma.prescription.groupBy({ by: ['status'], _count: { id: true } }),
-      this.prisma.prescription.count({
-        where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
-      }),
-    ]);
+    const counts: Record<string, number> = {};
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    const endDay = new Date(end);
+    endDay.setHours(23, 59, 59, 999);
 
-    return {
-      total,
-      issuedThisMonth: recentCount,
-      byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
-    };
+    while (cursor <= endDay) {
+      const key = cursor.toISOString().slice(0, 10);
+      counts[key] = 0;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    for (const r of records) {
+      const key = (r.createdAt as Date).toISOString().slice(0, 10);
+      if (key in counts) counts[key]++;
+    }
+
+    return Object.entries(counts).map(([date, count]) => ({ date, count }));
   }
 }

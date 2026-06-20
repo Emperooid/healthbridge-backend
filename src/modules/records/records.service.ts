@@ -69,7 +69,7 @@ export class RecordsService {
   async findAll(pagination: PaginationParams, requesterId: string, requesterRole: Role) {
     const where = this.buildWhereClause(requesterId, requesterRole);
 
-    const [data, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.medicalRecord.findMany({
         where,
         skip: pagination.skip,
@@ -79,13 +79,13 @@ export class RecordsService {
           patient: { include: { user: { select: { firstName: true, lastName: true } } } },
           doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
           hospital: { select: { name: true } },
-          _count: { select: { files: true } },
+          files: true,
         },
       }),
       this.prisma.medicalRecord.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(raw.map(this.formatRecord), total, pagination);
   }
 
   async findOne(id: string, requesterId: string, requesterRole: Role) {
@@ -109,7 +109,7 @@ export class RecordsService {
       resourceId: id,
     });
 
-    return record;
+    return this.formatRecord(record);
   }
 
   async update(id: string, dto: UpdateRecordDto, requesterId: string, requesterRole: Role) {
@@ -158,7 +158,7 @@ export class RecordsService {
     const patient = await this.prisma.patient.findUnique({ where: { userId: requesterId } });
     if (!patient) throw new NotFoundException('No patient profile found for this account.');
 
-    const [data, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.medicalRecord.findMany({
         where: { patientId: patient.id },
         skip: pagination.skip,
@@ -167,13 +167,13 @@ export class RecordsService {
         include: {
           doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
           hospital: { select: { name: true } },
-          _count: { select: { files: true } },
+          files: true,
         },
       }),
       this.prisma.medicalRecord.count({ where: { patientId: patient.id } }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(raw.map(this.formatRecord), total, pagination);
   }
 
   async findByPatient(patientId: string, pagination: PaginationParams, requesterId: string, requesterRole: Role) {
@@ -184,7 +184,7 @@ export class RecordsService {
       throw new ForbiddenException('Access denied');
     }
 
-    const [data, total] = await Promise.all([
+    const [raw, total] = await Promise.all([
       this.prisma.medicalRecord.findMany({
         where: { patientId },
         skip: pagination.skip,
@@ -193,13 +193,41 @@ export class RecordsService {
         include: {
           doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
           hospital: { select: { name: true } },
-          _count: { select: { files: true } },
+          files: true,
         },
       }),
       this.prisma.medicalRecord.count({ where: { patientId } }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(raw.map(this.formatRecord), total, pagination);
+  }
+
+  private formatRecord(r: any) {
+    return {
+      id: r.id,
+      patientId: r.patientId,
+      doctorId: r.doctorId,
+      doctorName: r.doctor ? `Dr. ${r.doctor.user.firstName} ${r.doctor.user.lastName}` : null,
+      hospitalId: r.hospitalId,
+      hospitalName: r.hospital?.name ?? null,
+      title: r.title,
+      description: r.description,
+      diagnosis: r.diagnosis,
+      treatment: r.treatment,
+      prescription: r.prescription,
+      status: r.status,
+      visitDate: r.visitDate,
+      attachments: (r.files ?? []).map((f: any) => ({
+        id: f.id,
+        name: f.originalName,
+        url: f.url ?? null,
+        type: f.mimeType,
+        size: f.size,
+        uploadedAt: f.createdAt,
+      })),
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
   }
 
   private buildWhereClause(requesterId: string, role: Role) {

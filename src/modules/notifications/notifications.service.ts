@@ -14,32 +14,35 @@ export class NotificationsService {
     });
   }
 
-  async findAll(userId: string, pagination: PaginationParams) {
-    const [data, total] = await Promise.all([
+  async findAll(userId: string, pagination: PaginationParams, read?: boolean) {
+    const where: any = {
+      userId,
+      ...(read !== undefined ? { isRead: read } : {}),
+    };
+
+    const [raw, total] = await Promise.all([
       this.prisma.notification.findMany({
-        where: { userId },
+        where,
         skip: pagination.skip,
         take: pagination.limit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.notification.count({ where: { userId } }),
+      this.prisma.notification.count({ where }),
     ]);
 
+    const data = raw.map((n) => ({ ...n, read: n.isRead }));
     return paginate(data, total, pagination);
   }
 
   async markRead(id: string, userId: string) {
-    return this.prisma.notification.updateMany({
-      where: { id, userId },
-      data: { isRead: true },
-    });
+    await this.prisma.notification.updateMany({ where: { id, userId }, data: { isRead: true } });
+    const n = await this.prisma.notification.findFirst({ where: { id, userId } });
+    return n ? { ...n, read: n.isRead } : { message: 'Marked as read' };
   }
 
   async markAllRead(userId: string) {
-    return this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
-      data: { isRead: true },
-    });
+    await this.prisma.notification.updateMany({ where: { userId, isRead: false }, data: { isRead: true } });
+    return { message: 'All notifications marked as read' };
   }
 
   async getUnreadCount(userId: string) {

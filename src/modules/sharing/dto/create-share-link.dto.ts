@@ -1,4 +1,4 @@
-import { IsString, IsInt, IsOptional, Min, Max, IsIn } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsDateString, Min, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateShareLinkDto {
@@ -11,11 +11,10 @@ export class CreateShareLinkDto {
   @IsIn(['ALL', 'RECORDS', 'LABS', 'PRESCRIPTIONS'])
   scope: string;
 
-  @ApiProperty({ description: 'Expiry in hours', example: 48, minimum: 1, maximum: 720 })
-  @IsInt()
-  @Min(1)
-  @Max(720)
-  expiresInHours: number;
+  @ApiPropertyOptional({ description: 'ISO date string expiry', example: '2026-07-01T00:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
 
   @ApiPropertyOptional({ description: 'Max number of times the link can be accessed', example: 5 })
   @IsOptional()
