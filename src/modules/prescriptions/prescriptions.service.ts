@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -22,17 +22,34 @@ export class PrescriptionsService {
   ) {}
 
   async create(dto: CreatePrescriptionDto, requesterId: string) {
+    // Resolve doctorId and hospitalId from the requesting doctor's profile if not supplied
+    let resolvedDoctorId = dto.doctorId;
+    let resolvedHospitalId = dto.hospitalId;
+
+    if (!resolvedDoctorId || !resolvedHospitalId) {
+      const doctorProfile = await this.prisma.doctor.findUnique({
+        where: { userId: requesterId },
+        select: { id: true, hospitalId: true },
+      });
+      if (!doctorProfile) throw new ForbiddenException('Doctor profile not found for this user');
+      resolvedDoctorId = resolvedDoctorId ?? doctorProfile.id;
+      resolvedHospitalId = resolvedHospitalId ?? doctorProfile.hospitalId;
+    }
+
     const [patient, doctor, hospital] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: dto.patientId }, include: { user: true } }),
-      this.prisma.doctor.findUnique({ where: { id: dto.doctorId } }),
-      this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } }),
+      this.prisma.doctor.findUnique({
+        where: { id: resolvedDoctorId },
+        include: { user: { select: { firstName: true, lastName: true } } },
+      }),
+      this.prisma.hospital.findUnique({ where: { id: resolvedHospitalId } }),
     ]);
 
     if (!patient) throw new NotFoundException('Patient not found');
     if (!doctor) throw new NotFoundException('Doctor not found');
     if (!hospital) throw new NotFoundException('Hospital not found');
 
-    if (doctor.hospitalId !== dto.hospitalId) {
+    if (doctor.hospitalId !== resolvedHospitalId) {
       throw new BadRequestException('Doctor does not belong to the specified hospital');
     }
 
@@ -44,8 +61,8 @@ export class PrescriptionsService {
     const prescription = await this.prisma.prescription.create({
       data: {
         patientId: dto.patientId,
-        doctorId: dto.doctorId,
-        hospitalId: dto.hospitalId,
+        doctorId: resolvedDoctorId,
+        hospitalId: resolvedHospitalId,
         visitId: dto.visitId,
         drug: dto.drug,
         dosage: dto.dosage,
@@ -60,6 +77,7 @@ export class PrescriptionsService {
       },
     });
 
+    const doctorName = `Dr. ${doctor.user.firstName} ${doctor.user.lastName}`;
     await Promise.all([
       this.auditService.log({
         userId: requesterId,
@@ -70,12 +88,12 @@ export class PrescriptionsService {
       }),
       this.notifications.create(patient.userId, {
         title: 'New Prescription',
-        message: `A prescription for ${dto.drug} has been issued by Dr. ${doctor.userId}.`,
+        message: `A prescription for ${dto.drug} has been issued by ${doctorName}.`,
         type: 'prescription',
       }),
     ]);
 
-    return prescription;
+    return this.formatPrescription(prescription);
   }
 
   async findAll(
@@ -101,7 +119,7 @@ export class PrescriptionsService {
       this.prisma.prescription.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(data.map(p => this.formatPrescription(p)), total, pagination);
   }
 
   async findMine(pagination: PaginationParams, requesterId: string, requesterRole: Role) {
@@ -132,7 +150,7 @@ export class PrescriptionsService {
       this.prisma.prescription.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(data.map(p => this.formatPrescription(p)), total, pagination);
   }
 
   async findOne(id: string, requesterId: string, requesterRole: Role) {
@@ -148,7 +166,7 @@ export class PrescriptionsService {
 
     if (!prescription) throw new NotFoundException(`Prescription ${id} not found`);
     this.assertAccess(prescription as any, requesterId, requesterRole);
-    return prescription;
+    return this.formatPrescription(prescription);
   }
 
   async update(id: string, dto: UpdatePrescriptionDto, requesterId: string, requesterRole: Role) {
@@ -159,7 +177,15 @@ export class PrescriptionsService {
     if (!prescription) throw new NotFoundException(`Prescription ${id} not found`);
     this.assertAccess(prescription as any, requesterId, requesterRole);
 
-    const updated = await this.prisma.prescription.update({ where: { id }, data: dto });
+    const updated = await this.prisma.prescription.update({
+      where: { id },
+      data: dto,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+        hospital: { select: { name: true } },
+      },
+    });
 
     await this.auditService.log({
       userId: requesterId,
@@ -169,8 +195,38 @@ export class PrescriptionsService {
       details: dto as Record<string, unknown>,
     });
 
-    return updated;
+    return this.formatPrescription(updated);
   }
+
+  // ─── Formatter ────────────────────────────────────────────────────────────
+
+  private formatPrescription(p: any) {
+    return {
+      id: p.id,
+      patientId: p.patientId,
+      patientName: p.patient
+        ? `${p.patient.user.firstName} ${p.patient.user.lastName}`.trim()
+        : null,
+      doctorId: p.doctorId,
+      doctorName: p.doctor
+        ? `Dr. ${p.doctor.user.firstName} ${p.doctor.user.lastName}`.trim()
+        : null,
+      hospitalId: p.hospitalId,
+      hospitalName: p.hospital?.name ?? null,
+      visitId: p.visitId ?? null,
+      drug: p.drug,
+      dosage: p.dosage,
+      frequency: p.frequency,
+      duration: p.duration,
+      instructions: p.instructions ?? null,
+      status: p.status,
+      prescribedAt: p.createdAt,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    };
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private buildWhere(
     requesterId: string,
@@ -202,6 +258,3 @@ export class PrescriptionsService {
     }
   }
 }
-
-
-

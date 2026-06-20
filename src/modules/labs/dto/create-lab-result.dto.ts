@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+
+export enum LabInterpretation {
+  NORMAL = 'NORMAL',
+  ABNORMAL = 'ABNORMAL',
+  CRITICAL = 'CRITICAL',
+}
 
 export class CreateLabResultDto {
   @ApiProperty()
@@ -25,10 +31,15 @@ export class CreateLabResultDto {
   @IsString()
   referenceRange?: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({ default: false, description: 'Legacy boolean flag — use interpretation instead' })
   @IsOptional()
   @IsBoolean()
   isAbnormal?: boolean;
+
+  @ApiPropertyOptional({ enum: LabInterpretation, description: 'Preferred over isAbnormal' })
+  @IsOptional()
+  @IsEnum(LabInterpretation)
+  interpretation?: LabInterpretation;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -39,4 +50,9 @@ export class CreateLabResultDto {
   @IsOptional()
   @IsString()
   reportFile?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for reportFile' })
+  @IsOptional()
+  @IsString()
+  fileUrl?: string;
 }

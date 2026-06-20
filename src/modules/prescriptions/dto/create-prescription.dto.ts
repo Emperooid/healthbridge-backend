@@ -6,13 +6,15 @@ export class CreatePrescriptionDto {
   @IsUUID()
   patientId: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Auto-resolved from JWT token if omitted' })
+  @IsOptional()
   @IsUUID()
-  doctorId: string;
+  doctorId?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({ description: 'Auto-resolved from doctor profile if omitted' })
+  @IsOptional()
   @IsUUID()
-  hospitalId: string;
+  hospitalId?: string;
 
   @ApiPropertyOptional({ description: 'Link to a specific visit' })
   @IsOptional()

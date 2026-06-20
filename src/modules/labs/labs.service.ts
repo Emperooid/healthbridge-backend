@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -22,20 +22,34 @@ export class LabsService {
     private notifications: NotificationsService,
   ) {}
 
-  // â”€â”€â”€ Lab Orders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Lab Orders ───────────────────────────────────────────────────────────
 
   async createOrder(dto: CreateLabOrderDto, requesterId: string) {
+    // Resolve doctorId and hospitalId from the requesting doctor's profile if not supplied
+    let resolvedDoctorId = dto.doctorId;
+    let resolvedHospitalId = dto.hospitalId;
+
+    if (!resolvedDoctorId || !resolvedHospitalId) {
+      const doctorProfile = await this.prisma.doctor.findUnique({
+        where: { userId: requesterId },
+        select: { id: true, hospitalId: true },
+      });
+      if (!doctorProfile) throw new ForbiddenException('Doctor profile not found for this user');
+      resolvedDoctorId = resolvedDoctorId ?? doctorProfile.id;
+      resolvedHospitalId = resolvedHospitalId ?? doctorProfile.hospitalId;
+    }
+
     const [patient, doctor, hospital] = await Promise.all([
       this.prisma.patient.findUnique({ where: { id: dto.patientId }, include: { user: true } }),
-      this.prisma.doctor.findUnique({ where: { id: dto.doctorId }, include: { user: true } }),
-      this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } }),
+      this.prisma.doctor.findUnique({ where: { id: resolvedDoctorId }, include: { user: { select: { firstName: true, lastName: true } } } }),
+      this.prisma.hospital.findUnique({ where: { id: resolvedHospitalId } }),
     ]);
 
     if (!patient) throw new NotFoundException('Patient not found');
     if (!doctor) throw new NotFoundException('Doctor not found');
     if (!hospital) throw new NotFoundException('Hospital not found');
 
-    if (doctor.hospitalId !== dto.hospitalId) {
+    if (doctor.hospitalId !== resolvedHospitalId) {
       throw new BadRequestException('Doctor does not belong to the specified hospital');
     }
 
@@ -47,8 +61,8 @@ export class LabsService {
     const order = await this.prisma.labOrder.create({
       data: {
         patientId: dto.patientId,
-        doctorId: dto.doctorId,
-        hospitalId: dto.hospitalId,
+        doctorId: resolvedDoctorId,
+        hospitalId: resolvedHospitalId,
         visitId: dto.visitId,
         tests: dto.tests,
         notes: dto.notes,
@@ -75,7 +89,7 @@ export class LabsService {
       }),
     ]);
 
-    return order;
+    return this.formatOrder(order);
   }
 
   async findAllOrders(
@@ -96,13 +110,12 @@ export class LabsService {
           patient: { include: { user: { select: { firstName: true, lastName: true } } } },
           doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
           hospital: { select: { name: true } },
-          _count: { select: { results: true } },
         },
       }),
       this.prisma.labOrder.count({ where }),
     ]);
 
-    return paginate(data, total, pagination);
+    return paginate(data.map(o => this.formatOrder(o)), total, pagination);
   }
 
   async findOneOrder(id: string, requesterId: string, requesterRole: Role) {
@@ -127,17 +140,30 @@ export class LabsService {
       resourceId: id,
     });
 
-    return order;
+    return {
+      ...this.formatOrder(order),
+      results: (order.results ?? []).map(r => this.formatResult(r)),
+    };
   }
 
   async updateOrder(id: string, dto: UpdateLabOrderDto, requesterId: string) {
     const order = await this.prisma.labOrder.findUnique({ where: { id } });
     if (!order) throw new NotFoundException(`Lab order ${id} not found`);
 
-    return this.prisma.labOrder.update({ where: { id }, data: dto });
+    const updated = await this.prisma.labOrder.update({
+      where: { id },
+      data: dto,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        doctor: { include: { user: { select: { firstName: true, lastName: true } } } },
+        hospital: { select: { name: true } },
+      },
+    });
+
+    return this.formatOrder(updated);
   }
 
-  // â”€â”€â”€ Lab Results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Lab Results ──────────────────────────────────────────────────────────
 
   async addResult(dto: CreateLabResultDto, requesterId: string) {
     const order = await this.prisma.labOrder.findUnique({
@@ -153,6 +179,9 @@ export class LabsService {
       throw new BadRequestException('Cannot add results to a cancelled order');
     }
 
+    // Accept either isAbnormal (boolean) or interpretation (enum string)
+    const isAbnormal = dto.isAbnormal ?? (dto.interpretation === 'ABNORMAL' || dto.interpretation === 'CRITICAL') ?? false;
+
     const result = await this.prisma.labResult.create({
       data: {
         orderId: dto.orderId,
@@ -160,13 +189,13 @@ export class LabsService {
         value: dto.value,
         unit: dto.unit,
         referenceRange: dto.referenceRange,
-        isAbnormal: dto.isAbnormal ?? false,
+        isAbnormal,
         notes: dto.notes,
-        reportFile: dto.reportFile,
+        reportFile: dto.fileUrl ?? dto.reportFile,
       },
     });
 
-    // Mark order as completed if all tests have results
+    // Auto-advance order status based on result count
     const resultCount = await this.prisma.labResult.count({ where: { orderId: dto.orderId } });
     if (resultCount >= order.tests.length) {
       await this.prisma.labOrder.update({
@@ -180,7 +209,8 @@ export class LabsService {
       });
     }
 
-    const abnormalNote = dto.isAbnormal ? ' âš ï¸ Abnormal result detected.' : '';
+    const doctorName = `Dr. ${order.doctor.user.firstName} ${order.doctor.user.lastName}`;
+    const abnormalNote = isAbnormal ? ' ⚠️ Abnormal result detected.' : '';
     await Promise.all([
       this.notifications.create(order.patient.userId, {
         title: 'Lab Result Available',
@@ -190,7 +220,7 @@ export class LabsService {
       }),
       this.notifications.create(order.doctor.userId, {
         title: 'Lab Result Posted',
-        message: `${dto.testName} result posted for patient.${abnormalNote}`,
+        message: `${dto.testName} result posted for patient by ${doctorName}.${abnormalNote}`,
         type: 'lab',
         link: `/labs/orders/${dto.orderId}`,
       }),
@@ -203,7 +233,7 @@ export class LabsService {
       }),
     ]);
 
-    return result;
+    return this.formatResult(result);
   }
 
   async findResultsByOrder(orderId: string, requesterId: string, requesterRole: Role) {
@@ -214,11 +244,55 @@ export class LabsService {
     if (!order) throw new NotFoundException('Lab order not found');
     this.assertOrderAccess(order as any, requesterId, requesterRole);
 
-    return this.prisma.labResult.findMany({
+    const results = await this.prisma.labResult.findMany({
       where: { orderId },
       orderBy: { createdAt: 'asc' },
     });
+
+    return results.map(r => this.formatResult(r));
   }
+
+  // ─── Formatters ───────────────────────────────────────────────────────────
+
+  private formatOrder(o: any) {
+    return {
+      id: o.id,
+      patientId: o.patientId,
+      patientName: o.patient
+        ? `${o.patient.user.firstName} ${o.patient.user.lastName}`.trim()
+        : null,
+      doctorId: o.doctorId,
+      doctorName: o.doctor
+        ? `Dr. ${o.doctor.user.firstName} ${o.doctor.user.lastName}`.trim()
+        : null,
+      hospitalId: o.hospitalId,
+      hospitalName: o.hospital?.name ?? null,
+      visitId: o.visitId ?? null,
+      tests: o.tests,
+      status: o.status,
+      notes: o.notes ?? null,
+      orderedAt: o.createdAt,
+      createdAt: o.createdAt,
+    };
+  }
+
+  private formatResult(r: any) {
+    return {
+      id: r.id,
+      orderId: r.orderId,
+      testName: r.testName ?? null,
+      value: r.value ?? null,
+      unit: r.unit ?? null,
+      referenceRange: r.referenceRange ?? null,
+      interpretation: r.isAbnormal ? 'ABNORMAL' : 'NORMAL',
+      fileUrl: r.reportFile ?? null,
+      notes: r.notes ?? null,
+      resultedAt: r.createdAt,
+      createdAt: r.createdAt,
+    };
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private buildOrderWhere(
     requesterId: string,
@@ -249,6 +323,3 @@ export class LabsService {
     }
   }
 }
-
-
-
