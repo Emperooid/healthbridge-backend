@@ -33,13 +33,11 @@ export class HospitalsService {
   ) {}
 
   async register(dto: RegisterHospitalDto) {
-    const [emailUser, emailHospital, licenseConflict] = await Promise.all([
-      this.prisma.user.findUnique({ where: { email: dto.adminEmail } }),
-      dto.email ? this.prisma.hospital.findUnique({ where: { email: dto.email } }) : null,
+    const [emailUser, licenseConflict] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email: dto.email } }),
       this.prisma.hospital.findUnique({ where: { licenseNumber: dto.licenseNumber } }),
     ]);
-    if (emailUser) throw new ConflictException('Admin email already registered');
-    if (emailHospital) throw new ConflictException('Hospital email already registered');
+    if (emailUser) throw new ConflictException('Email already registered');
     if (licenseConflict) throw new ConflictException('License number already in use');
 
     const hashedPassword = await bcrypt.hash(dto.adminPassword, SALT_ROUNDS);
@@ -51,7 +49,6 @@ export class HospitalsService {
         city: dto.city,
         state: dto.state,
         phone: dto.phone,
-        email: dto.email,
         type: dto.hospitalType,
         licenseNumber: dto.licenseNumber,
       },
@@ -61,7 +58,7 @@ export class HospitalsService {
       data: {
         firstName: dto.adminFirstName,
         lastName: dto.adminLastName,
-        email: dto.adminEmail,
+        email: dto.email,
         password: hashedPassword,
         phone: dto.adminPhone,
         role: Role.ADMIN,
@@ -75,7 +72,7 @@ export class HospitalsService {
       data: { userId: user.id, token: hashedToken, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     this.mail.sendEmailVerification(user.email, user.firstName, `${frontendUrl}/verify-email?token=${rawToken}`)
       .catch(() => undefined);
 
