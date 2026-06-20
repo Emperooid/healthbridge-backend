@@ -50,18 +50,22 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
 
   // ── CORS ─────────────────────────────────────────────────────────────────────
+  const isProd = process.env.NODE_ENV === 'production';
   const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
     : [];
 
   app.enableCors({
     origin: (origin, callback) => {
-      // allow non-browser clients (curl, Postman, server-to-server) and listed origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin ${origin} not allowed`));
+      // In dev: allow all localhost origins regardless of port
+      if (!isProd && (!origin || origin.startsWith('http://localhost'))) {
+        return callback(null, true);
       }
+      // Allow non-browser clients (curl, Postman) and explicitly listed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
