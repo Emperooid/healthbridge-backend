@@ -34,7 +34,7 @@ export class HospitalsService {
 
   async register(dto: RegisterHospitalDto) {
     const [emailUser, licenseConflict] = await Promise.all([
-      this.prisma.user.findUnique({ where: { email: dto.email } }),
+      this.prisma.user.findUnique({ where: { email: dto.adminEmail } }),
       this.prisma.hospital.findUnique({ where: { licenseNumber: dto.licenseNumber } }),
     ]);
     if (emailUser) throw new ConflictException('Email already registered');
@@ -58,7 +58,7 @@ export class HospitalsService {
       data: {
         firstName: dto.adminFirstName,
         lastName: dto.adminLastName,
-        email: dto.email,
+        email: dto.adminEmail,
         password: hashedPassword,
         phone: dto.adminPhone,
         role: Role.ADMIN,

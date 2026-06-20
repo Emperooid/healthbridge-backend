@@ -13,7 +13,7 @@ export class RegisterHospitalDto {
 
   @ApiProperty() @IsString() adminFirstName!: string;
   @ApiProperty() @IsString() adminLastName!: string;
-  @ApiProperty() @IsEmail() email!: string;
+  @ApiProperty() @IsEmail() adminEmail!: string;
   @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) adminPassword!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() adminPhone?: string;
 }
