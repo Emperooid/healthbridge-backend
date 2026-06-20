@@ -20,13 +20,17 @@ export function setAuthCookies(
 
   const sessionPayload = {
     userId: user.id,
-    role: user.role,
+    role: user.role.toLowerCase(),
     email: user.email,
     name: `${user.firstName} ${user.lastName}`,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   };
+  const sessionSecret =
+    configService.get<string>('session.secret') ||
+    process.env.SESSION_SECRET ||
+    'healthbridge-dev-secret-key-change-in-production';
   const sessionToken = jwtService.sign(sessionPayload, {
-    secret: configService.get<string>('jwt.accessSecret'),
+    secret: sessionSecret,
     expiresIn: '7d',
   });
   res.cookie('hb_session', sessionToken, { ...cookieOpts, maxAge: 7 * 24 * 60 * 60 * 1000 });

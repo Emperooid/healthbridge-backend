@@ -34,4 +34,8 @@ export default () => ({
     ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
     limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
   },
+
+  session: {
+    secret: process.env.SESSION_SECRET || 'healthbridge-dev-secret-key-change-in-production',
+  },
 });
