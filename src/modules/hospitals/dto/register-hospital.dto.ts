@@ -8,7 +8,7 @@ export class RegisterHospitalDto {
   @ApiProperty() @IsString() city!: string;
   @ApiProperty() @IsString() state!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
-  @ApiProperty() @IsEmail() email!: string;
+  @ApiPropertyOptional() @IsOptional() @IsEmail() email?: string;
   @ApiProperty({ enum: HospitalType }) @IsEnum(HospitalType) hospitalType!: HospitalType;
   @ApiProperty() @IsString() licenseNumber!: string;
 
