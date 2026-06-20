@@ -35,23 +35,23 @@ export class HospitalsService {
   async register(dto: RegisterHospitalDto) {
     const [emailUser, emailHospital, licenseConflict] = await Promise.all([
       this.prisma.user.findUnique({ where: { email: dto.adminEmail } }),
-      this.prisma.hospital.findUnique({ where: { email: dto.hospitalEmail } }),
+      this.prisma.hospital.findUnique({ where: { email: dto.email } }),
       this.prisma.hospital.findUnique({ where: { licenseNumber: dto.licenseNumber } }),
     ]);
     if (emailUser) throw new ConflictException('Admin email already registered');
     if (emailHospital) throw new ConflictException('Hospital email already registered');
     if (licenseConflict) throw new ConflictException('License number already in use');
 
-    const hashedPassword = await bcrypt.hash(dto.password, SALT_ROUNDS);
+    const hashedPassword = await bcrypt.hash(dto.adminPassword, SALT_ROUNDS);
 
     const hospital = await this.prisma.hospital.create({
       data: {
-        name: dto.hospitalName,
+        name: dto.name,
         address: dto.address,
         city: dto.city,
         state: dto.state,
-        phone: dto.hospitalPhone,
-        email: dto.hospitalEmail,
+        phone: dto.phone,
+        email: dto.email,
         type: dto.hospitalType,
         licenseNumber: dto.licenseNumber,
       },
