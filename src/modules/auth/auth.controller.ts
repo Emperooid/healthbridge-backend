@@ -67,22 +67,46 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({ summary: 'Get a new access token using the HttpOnly refresh cookie' })
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
-    const token = req.cookies?.[REFRESH_COOKIE];
-    if (!token) throw new UnauthorizedException('No refresh token');
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
-    let userId: string;
-    try {
-      const payload = await this.jwtService.verifyAsync<{ sub: string }>(token, {
-        secret: this.configService.get<string>('jwt.refreshSecret'),
-      });
-      userId = payload.sub;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+    // Primary path: standard refresh-token rotation
+    if (refreshToken) {
+      let userId: string;
+      try {
+        const payload = await this.jwtService.verifyAsync<{ sub: string }>(refreshToken, {
+          secret: this.configService.get<string>('jwt.refreshSecret'),
+        });
+        userId = payload.sub;
+      } catch {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+      const result = await this.authService.refreshTokens(userId, refreshToken);
+      this.setAuthCookies(res, result.refreshToken, result.user);
+      return { accessToken: result.accessToken, user: result.user };
     }
 
-    const result = await this.authService.refreshTokens(userId, token);
-    this.setAuthCookies(res, result.refreshToken, result.user);
-    return { accessToken: result.accessToken, user: result.user };
+    // Fallback: no refresh token cookie (e.g. local HTTP dev where Secure cookies are rejected).
+    // Accept a valid hb_session to issue a short-lived access token without token rotation.
+    const sessionToken = req.cookies?.['hb_session'];
+    if (sessionToken) {
+      const sessionSecret =
+        this.configService.get<string>('session.secret') ||
+        process.env.SESSION_SECRET ||
+        'healthbridge-dev-secret-key-change-in-production';
+      let userId: string;
+      try {
+        const payload = await this.jwtService.verifyAsync<{ userId: string }>(sessionToken, {
+          secret: sessionSecret,
+        });
+        userId = payload.userId;
+      } catch {
+        throw new UnauthorizedException('Invalid or expired session');
+      }
+      const result = await this.authService.issueAccessTokenForSession(userId);
+      return result;
+    }
+
+    throw new UnauthorizedException('No refresh token');
   }
 
   @UseGuards(JwtAuthGuard)

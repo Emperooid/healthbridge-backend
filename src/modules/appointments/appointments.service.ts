@@ -20,9 +20,16 @@ export class AppointmentsService {
   ) {}
 
   async create(dto: CreateAppointmentDto, requesterId: string, requesterRole: Role) {
+    // Accept either the record UUID or the user UUID — the frontend may send either
     const [patient, doctor, hospital] = await Promise.all([
-      this.prisma.patient.findUnique({ where: { id: dto.patientId }, include: { user: true } }),
-      this.prisma.doctor.findUnique({ where: { id: dto.doctorId }, include: { user: true } }),
+      this.prisma.patient.findFirst({
+        where: { OR: [{ id: dto.patientId }, { userId: dto.patientId }] },
+        include: { user: true },
+      }),
+      this.prisma.doctor.findFirst({
+        where: { OR: [{ id: dto.doctorId }, { userId: dto.doctorId }] },
+        include: { user: true },
+      }),
       this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } }),
     ]);
 
@@ -40,7 +47,7 @@ export class AppointmentsService {
 
     const conflict = await this.prisma.appointment.findFirst({
       where: {
-        doctorId: dto.doctorId,
+        doctorId: doctor.id,
         scheduledAt: new Date(dto.scheduledAt),
         status: { notIn: [AppointmentStatus.CANCELLED] },
       },
@@ -49,8 +56,8 @@ export class AppointmentsService {
 
     const appointment = await this.prisma.appointment.create({
       data: {
-        patientId: dto.patientId,
-        doctorId: dto.doctorId,
+        patientId: patient.id,
+        doctorId: doctor.id,
         hospitalId: dto.hospitalId,
         title: dto.title,
         reason: dto.reason,
@@ -281,15 +288,22 @@ export class AppointmentsService {
 
     const base = {
       ...(status ? { status } : {}),
-      ...(patientId ? { patientId } : {}),
-      ...(doctorId ? { doctorId } : {}),
+      // Accept either patient record UUID or user UUID
+      ...(patientId ? { patient: { OR: [{ id: patientId }, { userId: patientId }] } } : {}),
+      // Accept either doctor record UUID or user UUID
+      ...(doctorId ? { doctor: { OR: [{ id: doctorId }, { userId: doctorId }] } } : {}),
       ...(hospitalId ? { hospitalId } : {}),
       ...dateFilter,
     };
 
     if (role === Role.ADMIN) return base;
-    if (role === Role.DOCTOR) return { ...base, doctor: { userId: requesterId } };
-    return { ...base, patient: { userId: requesterId } };
+    if (role === Role.DOCTOR) {
+      // Strip any explicit doctor relation filter so the role guard is the sole authority
+      const { doctor: _d, ...rest } = base as any;
+      return { ...rest, doctor: { userId: requesterId } };
+    }
+    const { patient: _p, ...rest } = base as any;
+    return { ...rest, patient: { userId: requesterId } };
   }
 
   private assertAccess(

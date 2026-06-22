@@ -40,7 +40,10 @@ export class LabsService {
     }
 
     const [patient, doctor, hospital] = await Promise.all([
-      this.prisma.patient.findUnique({ where: { id: dto.patientId }, include: { user: true } }),
+      this.prisma.patient.findFirst({
+        where: { OR: [{ id: dto.patientId }, { userId: dto.patientId }] },
+        include: { user: true },
+      }),
       this.prisma.doctor.findUnique({ where: { id: resolvedDoctorId }, include: { user: { select: { firstName: true, lastName: true } } } }),
       this.prisma.hospital.findUnique({ where: { id: resolvedHospitalId } }),
     ]);
@@ -60,7 +63,7 @@ export class LabsService {
 
     const order = await this.prisma.labOrder.create({
       data: {
-        patientId: dto.patientId,
+        patientId: patient.id,
         doctorId: resolvedDoctorId,
         hospitalId: resolvedHospitalId,
         visitId: dto.visitId,
@@ -305,8 +308,11 @@ export class LabsService {
       ...(status ? { status } : {}),
     };
     if (role === Role.ADMIN) return base;
-    if (role === Role.DOCTOR) return { ...base, doctor: { userId: requesterId } };
-    return { ...base, patient: { userId: requesterId } };
+    if (role === Role.DOCTOR) {
+      return { ...base, doctor: { userId: requesterId } };
+    }
+    const { patientId: _p, ...rest } = base as any;
+    return { ...rest, patient: { userId: requesterId } };
   }
 
   private assertOrderAccess(

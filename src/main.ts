@@ -85,7 +85,7 @@ async function bootstrap() {
   // ── Swagger (dev only) ───────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== 'production') {
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('HealthBridge API')
+      .setTitle('CliniLynk API')
       .setDescription('Scalable healthcare records management platform')
       .setVersion('1.0')
       .addBearerAuth()
@@ -108,6 +108,6 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port, '0.0.0.0');
   const url = process.env.BACKEND_URL || `http://localhost:${port}`;
-  console.log(`HealthBridge API running on ${url}/api/v1`);
+  console.log(`CliniLynk API running on ${url}/api/v1`);
 }
 bootstrap();

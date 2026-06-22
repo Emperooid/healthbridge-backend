@@ -24,9 +24,18 @@ export class EncountersService {
   // â”€â”€â”€ Visits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async createVisit(dto: CreateVisitDto, requesterId: string) {
+    // Auto-resolve doctorId from the requesting user's doctor profile when not supplied
+    let resolvedDoctorId = dto.doctorId;
+    if (!resolvedDoctorId) {
+      const doctorProfile = await this.prisma.doctor.findUnique({ where: { userId: requesterId } });
+      if (!doctorProfile) throw new ForbiddenException('Doctor profile not found for this user');
+      resolvedDoctorId = doctorProfile.id;
+    }
+
     const [patient, doctor, hospital] = await Promise.all([
-      this.prisma.patient.findUnique({ where: { id: dto.patientId } }),
-      this.prisma.doctor.findUnique({ where: { id: dto.doctorId } }),
+      // Accept patient record UUID or user UUID
+      this.prisma.patient.findFirst({ where: { OR: [{ id: dto.patientId }, { userId: dto.patientId }] } }),
+      this.prisma.doctor.findFirst({ where: { OR: [{ id: resolvedDoctorId }, { userId: resolvedDoctorId }] } }),
       this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } }),
     ]);
 
@@ -47,11 +56,11 @@ export class EncountersService {
 
     const visit = await this.prisma.visit.create({
       data: {
-        patientId: dto.patientId,
-        doctorId: dto.doctorId,
+        patientId: patient.id,
+        doctorId: doctor.id,
         hospitalId: dto.hospitalId,
         departmentId: dto.departmentId,
-        reason: dto.reason,
+        reason: dto.reason ?? 'Walk-in visit',
         startTime: dto.startTime ? new Date(dto.startTime) : undefined,
       },
       include: {
@@ -216,8 +225,12 @@ export class EncountersService {
       ...(status ? { status } : {}),
     };
     if (role === Role.ADMIN) return base;
-    if (role === Role.DOCTOR) return { ...base, doctor: { userId: requesterId } };
-    return { ...base, patient: { userId: requesterId } };
+    if (role === Role.DOCTOR) {
+      const { doctorId: _d, ...rest } = base as any;
+      return { ...rest, doctor: { userId: requesterId } };
+    }
+    const { patientId: _p, ...rest } = base as any;
+    return { ...rest, patient: { userId: requesterId } };
   }
 
   private assertVisitAccess(

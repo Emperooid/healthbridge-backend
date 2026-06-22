@@ -61,7 +61,8 @@ export class PatientsService {
 
     const base: any = {
       ...(hospitalId ? { hospitalId } : {}),
-      ...(doctorId ? { assignedDoctorId: doctorId } : {}),
+      // Accept either the doctor record UUID or the doctor's user UUID
+      ...(doctorId ? { assignedDoctor: { OR: [{ id: doctorId }, { userId: doctorId }] } } : {}),
       ...(search
         ? {
             OR: [

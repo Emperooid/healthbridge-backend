@@ -37,7 +37,10 @@ export class PrescriptionsService {
     }
 
     const [patient, doctor, hospital] = await Promise.all([
-      this.prisma.patient.findUnique({ where: { id: dto.patientId }, include: { user: true } }),
+      this.prisma.patient.findFirst({
+        where: { OR: [{ id: dto.patientId }, { userId: dto.patientId }] },
+        include: { user: true },
+      }),
       this.prisma.doctor.findUnique({
         where: { id: resolvedDoctorId },
         include: { user: { select: { firstName: true, lastName: true } } },
@@ -60,7 +63,7 @@ export class PrescriptionsService {
 
     const prescription = await this.prisma.prescription.create({
       data: {
-        patientId: dto.patientId,
+        patientId: patient.id,
         doctorId: resolvedDoctorId,
         hospitalId: resolvedHospitalId,
         visitId: dto.visitId,
@@ -240,8 +243,13 @@ export class PrescriptionsService {
       ...(status ? { status } : {}),
     };
     if (role === Role.ADMIN) return base;
-    if (role === Role.DOCTOR) return { ...base, doctor: { userId: requesterId } };
-    return { ...base, patient: { userId: requesterId } };
+    if (role === Role.DOCTOR) {
+      // Remove scalar doctorId so it doesn't conflict with the relation guard
+      const { doctorId: _d, ...rest } = base as any;
+      return { ...rest, doctor: { userId: requesterId } };
+    }
+    const { patientId: _p, ...rest } = base as any;
+    return { ...rest, patient: { userId: requesterId } };
   }
 
   private assertAccess(

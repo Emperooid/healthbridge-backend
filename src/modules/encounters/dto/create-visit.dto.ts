@@ -6,9 +6,10 @@ export class CreateVisitDto {
   @IsUUID()
   patientId: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
-  doctorId: string;
+  doctorId?: string;
 
   @ApiProperty()
   @IsUUID()
@@ -19,9 +20,10 @@ export class CreateVisitDto {
   @IsUUID()
   departmentId?: string;
 
-  @ApiProperty({ example: 'Chest pain and shortness of breath' })
+  @ApiPropertyOptional({ example: 'Chest pain and shortness of breath' })
+  @IsOptional()
   @IsString()
-  reason: string;
+  reason?: string;
 
   @ApiPropertyOptional({ example: '2026-06-09T09:00:00.000Z' })
   @IsOptional()

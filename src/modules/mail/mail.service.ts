@@ -15,7 +15,7 @@ export class MailService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        sender: { name: 'HealthBridge', email: this.senderEmail },
+        sender: { name: 'CliniLynk', email: this.senderEmail },
         to: [{ email: to }],
         subject,
         htmlContent,
@@ -29,9 +29,9 @@ export class MailService {
 
   async sendEmailVerification(to: string, firstName: string, verifyUrl: string) {
     try {
-      await this.send(to, 'Verify your HealthBridge email address', `
+      await this.send(to, 'Verify your CliniLynk email address', `
         <div style="font-family:sans-serif;max-width:480px;margin:auto">
-          <h2>Welcome to HealthBridge, ${firstName}!</h2>
+          <h2>Welcome to CliniLynk, ${firstName}!</h2>
           <p>Please verify your email address to activate your account.
              This link expires in <strong>24 hours</strong>.</p>
           <a href="${verifyUrl}"
@@ -40,7 +40,7 @@ export class MailService {
             Verify Email
           </a>
           <p style="margin-top:24px;color:#6b7280;font-size:13px">
-            If you didn't create a HealthBridge account, ignore this email.<br>
+            If you didn't create a CliniLynk account, ignore this email.<br>
             Link: ${verifyUrl}
           </p>
         </div>
@@ -52,10 +52,10 @@ export class MailService {
 
   async sendDoctorInvite(to: string, firstName: string, hospitalName: string, acceptUrl: string) {
     try {
-      await this.send(to, `You've been invited to join ${hospitalName} on HealthBridge`, `
+      await this.send(to, `You've been invited to join ${hospitalName} on CliniLynk`, `
         <div style="font-family:sans-serif;max-width:480px;margin:auto">
           <h2>You're invited, ${firstName}!</h2>
-          <p><strong>${hospitalName}</strong> has invited you to join HealthBridge as a doctor.</p>
+          <p><strong>${hospitalName}</strong> has invited you to join CliniLynk as a doctor.</p>
           <p>Click the button below to set your password and activate your account.
              This link expires in <strong>7 days</strong>.</p>
           <a href="${acceptUrl}"
@@ -76,11 +76,11 @@ export class MailService {
 
   async sendPasswordReset(to: string, firstName: string, resetUrl: string) {
     try {
-      await this.send(to, 'Reset your HealthBridge password', `
+      await this.send(to, 'Reset your CliniLynk password', `
         <div style="font-family:sans-serif;max-width:480px;margin:auto">
           <h2>Password Reset Request</h2>
           <p>Hi ${firstName},</p>
-          <p>We received a request to reset your HealthBridge password.
+          <p>We received a request to reset your CliniLynk password.
              Click the button below to choose a new password.
              This link expires in <strong>30 minutes</strong> and can only be used once.</p>
           <a href="${resetUrl}"

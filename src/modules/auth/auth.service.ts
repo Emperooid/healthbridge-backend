@@ -398,6 +398,23 @@ export class AuthService {
     };
   }
 
+  async issueAccessTokenForSession(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true },
+    });
+    if (!user || !user.isActive) throw new UnauthorizedException('User not found or inactive');
+
+    const accessSecret = this.configService.get<string>('jwt.accessSecret')!;
+    const accessExpiresIn = this.configService.get<string>('jwt.accessExpiresIn') ?? '15m';
+    const accessToken = await this.jwtService.signAsync(
+      { sub: user.id, email: user.email, role: user.role },
+      { secret: accessSecret, expiresIn: accessExpiresIn as any },
+    );
+    const { isActive: _, ...safeUser } = user;
+    return { accessToken, user: safeUser };
+  }
+
   private async issueTokenPair(userId: string, email: string, role: Role) {
     const payload = { sub: userId, email, role };
 

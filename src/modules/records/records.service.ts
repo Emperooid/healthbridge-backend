@@ -21,9 +21,14 @@ export class RecordsService {
   ) {}
 
   async create(dto: CreateRecordDto, requesterId: string) {
+    // Accept either the record UUID or the user UUID — callers may send either
     const [patient, doctor, hospital] = await Promise.all([
-      this.prisma.patient.findUnique({ where: { id: dto.patientId } }),
-      this.prisma.doctor.findUnique({ where: { id: dto.doctorId } }),
+      this.prisma.patient.findFirst({
+        where: { OR: [{ id: dto.patientId }, { userId: dto.patientId }] },
+      }),
+      this.prisma.doctor.findFirst({
+        where: { OR: [{ id: dto.doctorId }, { userId: dto.doctorId }] },
+      }),
       this.prisma.hospital.findUnique({ where: { id: dto.hospitalId } }),
     ]);
 
@@ -37,8 +42,8 @@ export class RecordsService {
 
     const record = await this.prisma.medicalRecord.create({
       data: {
-        patientId: dto.patientId,
-        doctorId: dto.doctorId,
+        patientId: patient.id,
+        doctorId: doctor.id,
         hospitalId: dto.hospitalId,
         title: dto.title,
         description: dto.description,
