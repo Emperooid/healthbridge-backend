@@ -69,24 +69,25 @@ export class AuthController {
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
     const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
-    // Primary path: standard refresh-token rotation
+    // Primary path: standard refresh-token rotation via hb_refresh_token cookie.
+    // On any failure (invalid JWT, DB record gone, P2025, etc.) fall through to the
+    // hb_session fallback rather than returning a 500.
     if (refreshToken) {
-      let userId: string;
       try {
         const payload = await this.jwtService.verifyAsync<{ sub: string }>(refreshToken, {
           secret: this.configService.get<string>('jwt.refreshSecret'),
         });
-        userId = payload.sub;
+        const result = await this.authService.refreshTokens(payload.sub, refreshToken);
+        this.setAuthCookies(res, result.refreshToken, result.user);
+        return { accessToken: result.accessToken, user: result.user };
       } catch {
-        throw new UnauthorizedException('Invalid or expired refresh token');
+        // Fall through to hb_session fallback below.
       }
-      const result = await this.authService.refreshTokens(userId, refreshToken);
-      this.setAuthCookies(res, result.refreshToken, result.user);
-      return { accessToken: result.accessToken, user: result.user };
     }
 
-    // Fallback: no refresh token cookie (e.g. local HTTP dev where Secure cookies are rejected).
-    // Accept a valid hb_session to issue a short-lived access token without token rotation.
+    // Fallback: no refresh token cookie, or primary path failed (e.g. stale cookie, Secure
+    // cookie rejected on HTTP localhost, or race-condition delete).  Accept a valid
+    // hb_session JWT to issue a short-lived access token without token rotation.
     const sessionToken = req.cookies?.['hb_session'];
     if (sessionToken) {
       const sessionSecret =

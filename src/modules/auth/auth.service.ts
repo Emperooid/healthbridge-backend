@@ -143,7 +143,9 @@ export class AuthService {
     const tokenMatch = await bcrypt.compare(incomingRefreshToken, tokenRecord.token);
     if (!tokenMatch) throw new UnauthorizedException('Refresh token invalid');
 
-    await this.prisma.refreshToken.delete({ where: { id: tokenRecord.id } });
+    // deleteMany instead of delete — avoids P2025 crash when a concurrent request
+    // or race condition already removed the record between findFirst and delete.
+    await this.prisma.refreshToken.deleteMany({ where: { id: tokenRecord.id } });
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
